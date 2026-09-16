@@ -1,10 +1,15 @@
 /**
- * The single authorization vocabulary for Foundation v0.
+ * The single authorization vocabulary.
  *
- * Foundation v0 deliberately encodes only "can you be in the CRM at all" and
- * "can you administer users". Lead ownership, pipeline movement, quotations,
- * won/lost and task permissions are NOT modelled yet - but new permissions slot
- * into PERMISSIONS and ROLE_PERMISSIONS without touching any call site.
+ * Foundation v0 encoded "can you be in the CRM at all" and "can you administer
+ * users". CRM Domain Slice 1 adds contact and catalog capabilities. Lead
+ * ownership, pipeline movement, quotations, won/lost and task permissions are
+ * NOT modelled yet - but new permissions slot into PERMISSIONS and
+ * ROLE_PERMISSIONS without touching any call site.
+ *
+ * Everything here is a CAPABILITY check: does this role have this ability at
+ * all. Row scope - WHICH records a user may touch - is a separate concern,
+ * enforced where data is queried, never folded into this table.
  */
 
 export const ROLES = ['ADMIN', 'SALES_MANAGER', 'SALES_REP'] as const;
@@ -16,13 +21,37 @@ export const ROLE_LABELS: Record<Role, string> = {
   SALES_REP: 'Sales Rep',
 };
 
-export const PERMISSIONS = ['crm:access', 'users:read', 'users:manage'] as const;
+export const PERMISSIONS = [
+  'crm:access',
+  'users:read',
+  'users:manage',
+  'contacts:read',
+  'contacts:write',
+  'contacts:merge',
+  'catalog:manage',
+] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  ADMIN: ['crm:access', 'users:read', 'users:manage'],
-  SALES_MANAGER: ['crm:access'],
-  SALES_REP: ['crm:access'],
+  ADMIN: [
+    'crm:access',
+    'users:read',
+    'users:manage',
+    'contacts:read',
+    'contacts:write',
+    'contacts:merge',
+    'catalog:manage',
+  ],
+  SALES_MANAGER: [
+    'crm:access',
+    'contacts:read',
+    'contacts:write',
+    'contacts:merge',
+    'catalog:manage',
+  ],
+  // A rep works contacts but cannot merge them (a destructive, history-altering
+  // operation) and cannot manage the catalog.
+  SALES_REP: ['crm:access', 'contacts:read', 'contacts:write'],
 };
 
 export function isRole(value: unknown): value is Role {

@@ -1,8 +1,9 @@
 # Dental Hub CRM — Architecture
 
-Scope: Foundation v0. This describes what exists today and where the CRM modules
-will attach. See [FOUNDATION-V0.md](./FOUNDATION-V0.md) for scope and acceptance
-criteria.
+Scope: Foundation v0 + CRM Domain Slice 1. This describes what exists today and
+where later CRM modules will attach. See [FOUNDATION-V0.md](./FOUNDATION-V0.md)
+for the foundation and [CRM-DOMAIN-V0.md](./CRM-DOMAIN-V0.md) for the CRM
+domain, its locked identity rules and its reference data.
 
 ---
 
@@ -54,6 +55,8 @@ Rules that hold throughout:
 ```
 migrations/                  Numbered, immutable .sql migrations
   0001_foundation.sql
+  0002_crm_catalogs.sql      Slice 1: sources, campaigns, categories, products, outcome reasons
+  0003_crm_identity.sql      Slice 1: accounts, contacts, links, phone channels
 
 scripts/
   load-env.ts                .env loading for standalone Node (no dotenv)
@@ -98,9 +101,18 @@ src/
       dto.ts                 UserRow (private) → PublicUser (safe)
       repository.ts          All crm_user SQL
       admin-actions.ts       'use server' — user administration
+    crm/                       CRM domain modules (Slice 1+)
+      catalog/
+        repository.ts          All CRM catalog SQL (sources, campaigns, categories, products, outcome reasons)
+      accounts/
+        repository.ts          All crm_account + crm_account_contact SQL
+      contacts/
+        phone.ts               E.164 normalisation, default country EG
+        repository.ts          All crm_contact + crm_contact_channel SQL
 
 tests/foundation/            Acceptance suite
-docs/                        This document and FOUNDATION-V0.md
+tests/crm/                   CRM domain suite (no build or server needed)
+docs/                        This document, FOUNDATION-V0.md and CRM-DOMAIN-V0.md
 ```
 
 ### Why some modules carry `server-only` and others do not
@@ -224,6 +236,34 @@ crm_schema_migration            -- the one supporting table
 needs a ledger, and "re-running migrations is safe" is not a testable claim
 without one.
 
+CRM Domain Slice 1 adds nine domain tables, fully specified in
+[CRM-DOMAIN-V0.md](./CRM-DOMAIN-V0.md):
+
+```sql
+crm_source            -- where inbound interest originates (seeded reference data)
+crm_source_campaign   -- a campaign belongs to exactly one source
+crm_product_category  -- stable catalog grouping (seeded reference data)
+crm_product           -- a product belongs to exactly one category
+crm_outcome_reason    -- kind/code/label/requires_note/is_active (seeded reference data)
+crm_account           -- an organisation; name is NOT unique
+crm_contact           -- a person; NO account_id column; email unique-when-present
+crm_account_contact   -- the only account↔contact meeting point; surrogate id PK + UNIQUE (account_id, contact_id)
+crm_contact_channel   -- PHONE only for now; value is E.164 and globally unique
+```
+
+Structural facts worth knowing without opening the migrations:
+
+- `crm_contact` has **no `account_id`**: contacts relate to accounts only
+  through `crm_account_contact`, so one contact may serve many accounts.
+- The canonical phone identity is global: one E.164 `value` can never belong
+  to two contacts (partial unique index over PHONE rows).
+- `is_whatsapp` is a capability flag on a PHONE channel, never an identity;
+  a CHECK keeps it off any future non-phone channel type.
+- Contact email is `UNIQUE` with default `NULLS DISTINCT` semantics: many
+  contacts may lack an email; a recorded email identifies exactly one contact.
+- Every CRM foreign key is `ON DELETE RESTRICT`. Lifecycle is `is_active`;
+  nothing removes CRM history silently.
+
 ### Invariants enforced by the database, not by convention
 
 | Constraint | Fact it makes unrepresentable |
@@ -265,11 +305,15 @@ migrate, assert, migrate again, assert the second run changed nothing.
 
 One vocabulary, in `src/server/authz/permissions.ts`:
 
-| Role | `crm:access` | `users:read` | `users:manage` |
-|---|---|---|---|
-| `ADMIN` | ✅ | ✅ | ✅ |
-| `SALES_MANAGER` | ✅ | — | — |
-| `SALES_REP` | ✅ | — | — |
+| Role | `crm:access` | `users:read` | `users:manage` | `contacts:read` | `contacts:write` | `contacts:merge` | `catalog:manage` |
+|---|---|---|---|---|---|---|---|
+| `ADMIN` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `SALES_MANAGER` | ✅ | — | — | ✅ | ✅ | ✅ | ✅ |
+| `SALES_REP` | ✅ | — | — | ✅ | ✅ | — | — |
+
+Every entry is a capability check. Row scope — which specific records a user
+may touch — is deliberately not expressed here; it is enforced where data is
+queried.
 
 Three entry points, all in `dal.ts`:
 
@@ -322,8 +366,8 @@ because the field does not exist on the type that crosses the boundary.
 
 Adding Leads, Pipeline or Quotations should touch these seams and nothing else.
 
-**A new table** — add `migrations/0002_<name>.sql`. Never edit `0001`; the
-checksum guard will refuse it.
+**A new table** — add `migrations/0004_<name>.sql` (or later). Never edit an
+applied migration; the checksum guard will refuse it.
 
 **New permissions** — add to `PERMISSIONS` and grant them in `ROLE_PERMISSIONS`
 in `permissions.ts`. Every call site already goes through `can()`, so no other

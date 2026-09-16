@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# local agent tooling (never commit local agent state)
+.commandcode/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

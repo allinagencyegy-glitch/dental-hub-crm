@@ -31,7 +31,11 @@ describe('migrations', () => {
   it('applies cleanly to a fresh PostgreSQL database', async () => {
     const outcome = await runMigrations(client);
 
-    expect(outcome.applied).toEqual([{ version: 1, name: 'foundation' }]);
+    expect(outcome.applied).toEqual([
+      { version: 1, name: 'foundation' },
+      { version: 2, name: 'crm_catalogs' },
+      { version: 3, name: 'crm_identity' },
+    ]);
     expect(outcome.skipped).toEqual([]);
 
     const { rows } = await client.query<{ table_name: string }>(
@@ -39,8 +43,17 @@ describe('migrations', () => {
         WHERE table_schema = 'public' ORDER BY table_name`,
     );
     expect(rows.map((row) => row.table_name)).toEqual([
+      'crm_account',
+      'crm_account_contact',
+      'crm_contact',
+      'crm_contact_channel',
+      'crm_outcome_reason',
+      'crm_product',
+      'crm_product_category',
       'crm_schema_migration',
       'crm_session',
+      'crm_source',
+      'crm_source_campaign',
       'crm_user',
     ]);
   });
@@ -49,12 +62,16 @@ describe('migrations', () => {
     const outcome = await runMigrations(client);
 
     expect(outcome.applied).toEqual([]);
-    expect(outcome.skipped).toEqual([{ version: 1, name: 'foundation' }]);
+    expect(outcome.skipped).toEqual([
+      { version: 1, name: 'foundation' },
+      { version: 2, name: 'crm_catalogs' },
+      { version: 3, name: 'crm_identity' },
+    ]);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('1');
+    expect(rows[0].count).toBe('3');
   });
 
   it('records a checksum for every applied migration', async () => {
@@ -95,12 +112,37 @@ describe('migrations', () => {
     expect(types.updated_at).toBe('timestamp with time zone');
   });
 
-  it('creates no sales-domain tables', async () => {
+  it('creates the CRM Slice 1 domain tables', async () => {
     const { rows } = await client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
     );
     const names = rows.map((row) => row.table_name);
 
+    for (const slice1 of [
+      'crm_source',
+      'crm_source_campaign',
+      'crm_product_category',
+      'crm_product',
+      'crm_outcome_reason',
+      'crm_account',
+      'crm_contact',
+      'crm_account_contact',
+      'crm_contact_channel',
+    ]) {
+      expect(names).toContain(slice1);
+    }
+  });
+
+  it('creates no tables for deferred CRM slices', async () => {
+    const { rows } = await client.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`,
+    );
+    const names = rows.map((row) => row.table_name);
+
+    // Leads, opportunities, follow-ups and activities belong to later slices.
+    for (const deferred of ['crm_lead', 'crm_opportunity', 'crm_follow_up', 'crm_activity']) {
+      expect(names).not.toContain(deferred);
+    }
     for (const deferred of ['lead', 'customer', 'pipeline', 'task', 'quotation', 'report']) {
       expect(names.some((name) => name.includes(deferred))).toBe(false);
     }
