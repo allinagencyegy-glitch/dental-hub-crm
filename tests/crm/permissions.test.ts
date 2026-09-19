@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS, can, permissionsFor } from '../../src/server/authz/permissions';
 
-describe('Slice 1 permissions', () => {
-  it('defines exactly the foundation plus Slice 1 vocabulary', () => {
+describe('Slice 2A permissions', () => {
+  it('defines exactly the foundation plus Slice 1 and Slice 2A vocabulary', () => {
     expect([...PERMISSIONS].sort()).toEqual(
       [
         'crm:access',
@@ -12,6 +12,9 @@ describe('Slice 1 permissions', () => {
         'contacts:write',
         'contacts:merge',
         'catalog:manage',
+        'leads:read',
+        'leads:write',
+        'leads:disqualify',
       ].sort(),
     );
   });
@@ -28,15 +31,21 @@ describe('Slice 1 permissions', () => {
     expect(can('SALES_MANAGER', 'contacts:write')).toBe(true);
     expect(can('SALES_MANAGER', 'contacts:merge')).toBe(true);
     expect(can('SALES_MANAGER', 'catalog:manage')).toBe(true);
+    expect(can('SALES_MANAGER', 'leads:read')).toBe(true);
+    expect(can('SALES_MANAGER', 'leads:write')).toBe(true);
+    expect(can('SALES_MANAGER', 'leads:disqualify')).toBe(true);
 
     expect(can('SALES_MANAGER', 'users:read')).toBe(false);
     expect(can('SALES_MANAGER', 'users:manage')).toBe(false);
   });
 
-  it('grants SALES_REP contact read/write only', () => {
+  it('grants SALES_REP contact and lead read/write/disqualify', () => {
     expect(can('SALES_REP', 'crm:access')).toBe(true);
     expect(can('SALES_REP', 'contacts:read')).toBe(true);
     expect(can('SALES_REP', 'contacts:write')).toBe(true);
+    expect(can('SALES_REP', 'leads:read')).toBe(true);
+    expect(can('SALES_REP', 'leads:write')).toBe(true);
+    expect(can('SALES_REP', 'leads:disqualify')).toBe(true);
 
     // No destructive merge, no catalog management, no user administration.
     expect(can('SALES_REP', 'contacts:merge')).toBe(false);
@@ -57,7 +66,7 @@ describe('Slice 1 permissions', () => {
   });
 
   it('encodes no permissions for deferred CRM slices', () => {
-    const deferred = ['lead', 'pipeline', 'opportunity', 'quotation', 'task', 'activity', 'won', 'lost'];
+    const deferred = ['pipeline', 'opportunity', 'quotation', 'task', 'activity', 'won', 'lost'];
     for (const permission of PERMISSIONS) {
       for (const term of deferred) {
         expect(permission.toLowerCase()).not.toContain(term);

@@ -35,6 +35,7 @@ describe('migrations', () => {
       { version: 1, name: 'foundation' },
       { version: 2, name: 'crm_catalogs' },
       { version: 3, name: 'crm_identity' },
+      { version: 4, name: 'crm_leads' },
     ]);
     expect(outcome.skipped).toEqual([]);
 
@@ -47,6 +48,7 @@ describe('migrations', () => {
       'crm_account_contact',
       'crm_contact',
       'crm_contact_channel',
+      'crm_lead',
       'crm_outcome_reason',
       'crm_product',
       'crm_product_category',
@@ -66,12 +68,13 @@ describe('migrations', () => {
       { version: 1, name: 'foundation' },
       { version: 2, name: 'crm_catalogs' },
       { version: 3, name: 'crm_identity' },
+      { version: 4, name: 'crm_leads' },
     ]);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('3');
+    expect(rows[0].count).toBe('4');
   });
 
   it('records a checksum for every applied migration', async () => {
@@ -139,11 +142,11 @@ describe('migrations', () => {
     );
     const names = rows.map((row) => row.table_name);
 
-    // Leads, opportunities, follow-ups and activities belong to later slices.
-    for (const deferred of ['crm_lead', 'crm_opportunity', 'crm_follow_up', 'crm_activity']) {
+    // Leads (crm_lead) is now implemented in Slice 2A. Opportunities, follow-ups and activities belong to later slices.
+    for (const deferred of ['crm_opportunity', 'crm_follow_up', 'crm_activity']) {
       expect(names).not.toContain(deferred);
     }
-    for (const deferred of ['lead', 'customer', 'pipeline', 'task', 'quotation', 'report']) {
+    for (const deferred of ['customer', 'pipeline', 'task', 'quotation', 'report']) {
       expect(names.some((name) => name.includes(deferred))).toBe(false);
     }
   });

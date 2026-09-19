@@ -16,7 +16,7 @@ export interface NavItem {
 
 export const PRIMARY_NAV: NavItem[] = [
   { label: 'Home', href: '/crm', status: 'available' },
-  { label: 'Leads', status: 'planned' },
+  { label: 'Leads', href: '/crm/leads', status: 'available', permission: 'leads:read' },
   { label: 'Customers', status: 'planned' },
   { label: 'Pipeline', status: 'planned' },
   { label: 'Follow-ups', status: 'planned' },

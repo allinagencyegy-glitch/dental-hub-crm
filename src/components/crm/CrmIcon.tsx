@@ -6,7 +6,7 @@ export type CrmIconName =
   | 'plus' | 'filter' | 'calendar' | 'clock' | 'phone'
   | 'message' | 'mail' | 'meeting' | 'demo' | 'money'
   | 'alert' | 'more' | 'arrow' | 'building' | 'location' | 'check'
-  | 'sparkles' | 'pause' | 'target' | 'external' | 'activity';
+  | 'sparkles' | 'pause' | 'target' | 'external' | 'activity' | 'x';
 
 export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVGSVGElement>) {
   const paths: Record<CrmIconName, React.ReactNode> = {
@@ -38,7 +38,7 @@ export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVG
     location: <><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2"/></>,
     check: <path d="m5 12 4 4L19 6"/>, sparkles: <><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2zM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/></>,
     pause: <><path d="M8 5v14M16 5v14"/></>, target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
-    external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v7H4V6h7"/></>, activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>,
+    external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v7H4V6h7"/></>, activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>, x: <><path d="M18 6 6 18M6 6l12 12"/></>,
   };
 
   return (

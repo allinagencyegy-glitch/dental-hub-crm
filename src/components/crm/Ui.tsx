@@ -2,10 +2,10 @@ import Link from 'next/link';
 import type { CustomerLifecycle, FollowUpStatus, LeadSource, LeadStatus, OpportunityStage } from '@/lib/crm-ui/types';
 import { CrmIcon, type CrmIconName } from './CrmIcon';
 
-type BadgeValue = LeadStatus | OpportunityStage | CustomerLifecycle | FollowUpStatus | LeadSource | 'ON HOLD';
+export type BadgeValue = LeadStatus | OpportunityStage | CustomerLifecycle | FollowUpStatus | LeadSource | 'ON HOLD' | 'DISQUALIFIED';
 
 const badgeStyles: Record<BadgeValue, string> = {
-  NEW: 'bg-[#e9f7ff] text-[#137aa9]', CONTACTED: 'bg-[#fff4d9] text-[#9a6a00]', CONVERTED: 'bg-[#e8f8f1] text-[#14815f]',
+  NEW: 'bg-[#e9f7ff] text-[#137aa9]', CONTACTED: 'bg-[#fff4d9] text-[#9a6a00]', CONVERTED: 'bg-[#e8f8f1] text-[#14815f]', DISQUALIFIED: 'bg-[#ffe9ea] text-[#c43f47]',
   QUALIFICATION: 'bg-[#f1edff] text-[#6d52be]', QUOTATION: 'bg-[#e8f4ff] text-[#287bb5]', NEGOTIATION: 'bg-[#fff0e5] text-[#b45b1b]',
   PROSPECT: 'bg-[#f0edff] text-[#6c52b5]', CUSTOMER: 'bg-[#e6f8f2] text-[#118060]',
   OVERDUE: 'bg-[#ffeaeb] text-[#bd3941]', TODAY: 'bg-[#fff3dc] text-[#9e6700]', UPCOMING: 'bg-[#e9f4ff] text-[#2476ac]', COMPLETED: 'bg-[#e8f7ef] text-[#167955]',

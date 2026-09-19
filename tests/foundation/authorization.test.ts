@@ -38,8 +38,8 @@ describe('role permissions', () => {
     expect(isRole(undefined)).toBe(false);
   });
 
-  it('encodes no sales-domain permissions yet', () => {
-    const deferred = ['lead', 'pipeline', 'quotation', 'task', 'won', 'lost'];
+  it('encodes no sales-domain permissions for deferred slices', () => {
+    const deferred = ['pipeline', 'quotation', 'task', 'won', 'lost'];
     for (const permission of PERMISSIONS) {
       for (const term of deferred) {
         expect(permission.toLowerCase()).not.toContain(term);

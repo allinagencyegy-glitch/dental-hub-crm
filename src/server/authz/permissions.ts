@@ -29,6 +29,9 @@ export const PERMISSIONS = [
   'contacts:write',
   'contacts:merge',
   'catalog:manage',
+  'leads:read',
+  'leads:write',
+  'leads:disqualify',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -41,6 +44,9 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'contacts:write',
     'contacts:merge',
     'catalog:manage',
+    'leads:read',
+    'leads:write',
+    'leads:disqualify',
   ],
   SALES_MANAGER: [
     'crm:access',
@@ -48,10 +54,13 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'contacts:write',
     'contacts:merge',
     'catalog:manage',
+    'leads:read',
+    'leads:write',
+    'leads:disqualify',
   ],
   // A rep works contacts but cannot merge them (a destructive, history-altering
   // operation) and cannot manage the catalog.
-  SALES_REP: ['crm:access', 'contacts:read', 'contacts:write'],
+  SALES_REP: ['crm:access', 'contacts:read', 'contacts:write', 'leads:read', 'leads:write', 'leads:disqualify'],
 };
 
 export function isRole(value: unknown): value is Role {

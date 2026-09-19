@@ -1,0 +1,152 @@
+'use server';
+
+import 'server-only';
+import { z } from 'zod';
+import { assertPermission } from '@/server/auth/dal';
+import {
+  captureLeadUseCase,
+  listLeadsUseCase,
+  getLeadDetailUseCase,
+  markLeadContactedUseCase,
+  disqualifyLeadUseCase,
+  getLeadCaptureCatalogUseCase,
+  getSourceCampaignsUseCase,
+  getDisqualifyReasonsUseCase,
+  getAssignableOwnersUseCase,
+  type CaptureLeadInput,
+  type CaptureLeadResult,
+  type Actor,
+} from './service';
+import {
+  LeadNotFoundError,
+  LeadForbiddenError,
+  InvalidLeadStatusTransitionError,
+  InvalidDisqualifyReasonError,
+  type Lead,
+  type LeadDetail,
+  type LeadStatus,
+} from './repository';
+
+/**
+ * Input schema for lead capture.
+ * SALES_REP: owner_user_id is forced to current session user.
+ * SALES_MANAGER/ADMIN: may explicitly assign an owner.
+ */
+const captureLeadSchema = z.object({
+  fullName: z.string().min(1).max(200),
+  phone: z.string().max(50).optional().nullable(),
+  email: z.email().max(254).optional().nullable(),
+  sourceCode: z.string().min(1),
+  campaignCode: z.string().optional().nullable(),
+  productCategoryCode: z.string().optional().nullable(),
+  note: z.string().max(5000).optional().nullable(),
+  ownerUserId: z.string().uuid().optional().nullable(),
+});
+
+
+
+export async function captureLeadAction(input: CaptureLeadInput): Promise<CaptureLeadResult> {
+  const session = await assertPermission('leads:write');
+  const parsed = captureLeadSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, error: 'VALIDATION', message: 'Invalid input.' };
+  }
+
+  const actor: Actor = { userId: session.user.id, role: session.role };
+  return captureLeadUseCase(actor, parsed.data);
+}
+
+/**
+ * Lists leads for the current actor with row-scope authorization.
+ */
+export async function listLeadsAction(options: { status?: LeadStatus; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
+  const session = await assertPermission('leads:read');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+  return listLeadsUseCase(actor, options);
+}
+
+/**
+ * Gets lead detail by ID with row-scope authorization.
+ */
+export async function getLeadDetailAction(leadId: string): Promise<LeadDetail | null> {
+  const session = await assertPermission('leads:read');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+  return getLeadDetailUseCase(actor, leadId);
+}
+
+/**
+ * Marks a lead as CONTACTED.
+ */
+export async function markLeadContactedAction(leadId: string): Promise<{ ok: true; lead: Lead } | { ok: false; error: string; message: string }> {
+  const session = await assertPermission('leads:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  try {
+    const lead = await markLeadContactedUseCase(actor, leadId);
+    return { ok: true, lead };
+  } catch (error) {
+    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
+    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    if (error instanceof InvalidLeadStatusTransitionError) return { ok: false, error: 'INVALID_TRANSITION', message: error.message };
+    throw error;
+  }
+}
+
+/**
+ * Disqualifies a lead.
+ */
+export async function disqualifyLeadAction(
+  leadId: string,
+  input: { reasonId: string; note?: string | null },
+): Promise<{ ok: true; lead: Lead } | { ok: false; error: string; message: string }> {
+  const session = await assertPermission('leads:disqualify');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  try {
+    const lead = await disqualifyLeadUseCase(actor, leadId, input);
+    return { ok: true, lead };
+  } catch (error) {
+    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
+    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    if (error instanceof InvalidLeadStatusTransitionError) return { ok: false, error: 'INVALID_TRANSITION', message: error.message };
+    if (error instanceof InvalidDisqualifyReasonError) return { ok: false, error: 'INVALID_REASON', message: error.message };
+    throw error;
+  }
+}
+
+/**
+ * Gets catalog data for the capture form.
+ */
+export async function getLeadCaptureCatalogAction(): Promise<{
+  sources: { id: string; code: string; name: string }[];
+  productCategories: { id: string; code: string; name: string }[];
+}> {
+  await assertPermission('leads:write');
+  return getLeadCaptureCatalogUseCase();
+}
+
+/**
+ * Gets campaigns for a source.
+ */
+export async function getSourceCampaignsAction(sourceCode: string): Promise<{ id: string; code: string; name: string }[]> {
+  await assertPermission('leads:write');
+  return getSourceCampaignsUseCase(sourceCode);
+}
+
+/**
+ * Gets disqualification reasons for the disqualify dialog.
+ */
+export async function getDisqualifyReasonsAction(): Promise<{ id: string; code: string; label: string; requiresNote: boolean }[]> {
+  await assertPermission('leads:disqualify');
+  return getDisqualifyReasonsUseCase();
+}
+
+/**
+ * Gets assignable owners for lead capture (SALES_REP and SALES_MANAGER who are active).
+ * Only available to SALES_MANAGER and ADMIN.
+ */
+export async function getAssignableOwnersAction(): Promise<{ id: string; displayName: string; email: string; role: string }[]> {
+  await assertPermission('leads:write');
+  return getAssignableOwnersUseCase();
+}
