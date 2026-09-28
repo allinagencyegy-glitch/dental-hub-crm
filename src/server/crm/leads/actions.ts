@@ -13,9 +13,14 @@ import {
   getSourceCampaignsUseCase,
   getDisqualifyReasonsUseCase,
   getAssignableOwnersUseCase,
+  archiveLeadUseCase,
+  restoreLeadUseCase,
+  updateLeadUseCase,
   type CaptureLeadInput,
   type CaptureLeadResult,
   type Actor,
+  type UpdateLeadInput,
+  type UpdateLeadResult,
 } from './service';
 import {
   LeadNotFoundError,
@@ -60,7 +65,7 @@ export async function captureLeadAction(input: CaptureLeadInput): Promise<Captur
 /**
  * Lists leads for the current actor with row-scope authorization.
  */
-export async function listLeadsAction(options: { status?: LeadStatus; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
+export async function listLeadsAction(options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
   const session = await assertPermission('leads:read');
   const actor: Actor = { userId: session.user.id, role: session.role };
   return listLeadsUseCase(actor, options);
@@ -149,4 +154,49 @@ export async function getDisqualifyReasonsAction(): Promise<{ id: string; code: 
 export async function getAssignableOwnersAction(): Promise<{ id: string; displayName: string; email: string; role: string }[]> {
   await assertPermission('leads:write');
   return getAssignableOwnersUseCase();
+}
+
+/**
+ * Archives a lead.
+ */
+export async function archiveLeadAction(leadId: string): Promise<{ ok: true; lead: Lead } | { ok: false; error: string; message: string }> {
+  const session = await assertPermission('leads:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  try {
+    const lead = await archiveLeadUseCase(actor, leadId);
+    return { ok: true, lead };
+  } catch (error) {
+    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
+    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    throw error;
+  }
+}
+
+/**
+ * Restores an archived lead.
+ */
+export async function restoreLeadAction(leadId: string): Promise<{ ok: true; lead: Lead } | { ok: false; error: string; message: string }> {
+  const session = await assertPermission('leads:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  try {
+    const lead = await restoreLeadUseCase(actor, leadId);
+    return { ok: true, lead };
+  } catch (error) {
+    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
+    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    throw error;
+  }
+}
+
+/**
+ * Updates a lead (source, campaign, category, note, owner, contact info).
+ * Single atomic operation.
+ */
+export async function updateLeadAction(leadId: string, input: UpdateLeadInput): Promise<UpdateLeadResult> {
+  const session = await assertPermission('leads:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  return updateLeadUseCase(actor, leadId, input);
 }

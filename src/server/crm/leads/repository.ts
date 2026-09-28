@@ -19,6 +19,7 @@
  * own leads; SALES_MANAGER/ADMIN see all.
  */
 import type { Db } from '@/server/db/types';
+import { Pool, PoolClient } from 'pg';
 import { normaliseEmail } from '@/server/users/repository';
 import { normalisePhoneToE164 } from '@/server/crm/contacts/phone';
 import { createContact, findContactByPhone, DuplicatePhoneError, DuplicateContactEmailError } from '@/server/crm/contacts/repository';
@@ -29,17 +30,23 @@ export type LeadStatus = 'NEW' | 'CONTACTED' | 'DISQUALIFIED';
 export interface Lead {
   id: string;
   sourceId: string;
-  sourceName: string; // Added for list view
+  sourceName: string;
   campaignId: string | null;
   contactId: string;
+  contactName: string;
   accountId: string | null;
+  accountName: string | null;
   productCategoryId: string | null;
+  productCategoryName: string | null;
   status: LeadStatus;
   note: string | null;
   ownerUserId: string;
+  ownerName: string;
   receivedAt: Date;
   disqualifiedAt: Date | null;
   disqualifyReasonId: string | null;
+  archivedAt: Date | null;
+  archivedByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,17 +54,23 @@ export interface Lead {
 type LeadRow = {
   id: string;
   source_id: string;
-  source_name: string; // Added for list view
+  source_name: string;
   campaign_id: string | null;
   contact_id: string;
+  contact_full_name: string;
   account_id: string | null;
+  account_name: string | null;
   product_category_id: string | null;
+  product_category_name: string | null;
   status: LeadStatus;
   note: string | null;
   owner_user_id: string;
+  owner_display_name: string;
   received_at: Date;
   disqualified_at: Date | null;
   disqualify_reason_id: string | null;
+  archived_at: Date | null;
+  archived_by_user_id: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -69,14 +82,20 @@ function toLead(row: LeadRow): Lead {
     sourceName: row.source_name,
     campaignId: row.campaign_id,
     contactId: row.contact_id,
+    contactName: row.contact_full_name,
     accountId: row.account_id,
+    accountName: row.account_name,
     productCategoryId: row.product_category_id,
+    productCategoryName: row.product_category_name,
     status: row.status,
     note: row.note,
     ownerUserId: row.owner_user_id,
+    ownerName: row.owner_display_name,
     receivedAt: row.received_at,
     disqualifiedAt: row.disqualified_at,
     disqualifyReasonId: row.disqualify_reason_id,
+    archivedAt: row.archived_at,
+    archivedByUserId: row.archived_by_user_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -95,6 +114,8 @@ const LEAD_COLUMNS = `
   l.received_at,
   l.disqualified_at,
   l.disqualify_reason_id,
+  l.archived_at,
+  l.archived_by_user_id,
   l.created_at,
   l.updated_at
 `;
@@ -112,13 +133,19 @@ const LEAD_RETURNING_COLUMNS = `
   received_at,
   disqualified_at,
   disqualify_reason_id,
+  archived_at,
+  archived_by_user_id,
   created_at,
   updated_at
 `;
 
 const LEAD_LIST_COLUMNS = `
   ${LEAD_COLUMNS},
-  s.name AS source_name
+  s.name AS source_name,
+  c.full_name AS contact_full_name,
+  a.name AS account_name,
+  pc.name AS product_category_name,
+  u.display_name AS owner_display_name
 `;
 
 export class IdentityConflictError extends Error {
@@ -158,6 +185,20 @@ export class InvalidDisqualifyReasonError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'InvalidDisqualifyReasonError';
+  }
+}
+
+export class LeadAlreadyArchivedError extends Error {
+  constructor() {
+    super('Lead is already archived.');
+    this.name = 'LeadAlreadyArchivedError';
+  }
+}
+
+export class LeadNotArchivedError extends Error {
+  constructor() {
+    super('Lead is not archived.');
+    this.name = 'LeadNotArchivedError';
   }
 }
 
@@ -345,16 +386,17 @@ export async function findLeadById(
 }
 
 /**
- * Lists leads with row-scope authorization and pagination.
+ * Lists leads with row-scope authorization, pagination, and archive filtering.
  * SALES_REP sees only own leads.
  * SALES_MANAGER/ADMIN see all leads.
+ * archiveFilter: 'active' (default, archived_at IS NULL), 'archived' (archived_at IS NOT NULL), 'all' (both)
  */
 export async function listLeads(
   db: Db,
   actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
-  options: { status?: LeadStatus; limit?: number; offset?: number } = {},
+  options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; limit?: number; offset?: number } = {},
 ): Promise<{ leads: Lead[]; total: number }> {
-  const { status, limit = 50, offset = 0 } = options;
+  const { status, archiveFilter = 'active', limit = 50, offset = 0 } = options;
 
   let whereClause = '';
   const params: (string | number)[] = [];
@@ -362,6 +404,16 @@ export async function listLeads(
   if (actor.role === 'SALES_REP') {
     whereClause = 'WHERE l.owner_user_id = $1';
     params.push(actor.userId);
+  }
+
+  // Archive filter
+  const archiveCondition = archiveFilter === 'active' ? 'l.archived_at IS NULL' : archiveFilter === 'archived' ? 'l.archived_at IS NOT NULL' : null;
+  if (archiveCondition) {
+    if (whereClause) {
+      whereClause += ` AND ${archiveCondition}`;
+    } else {
+      whereClause = `WHERE ${archiveCondition}`;
+    }
   }
 
   if (status) {
@@ -386,6 +438,10 @@ export async function listLeads(
     `SELECT ${LEAD_LIST_COLUMNS}
        FROM crm_lead l
        JOIN crm_source s ON s.id = l.source_id
+       JOIN crm_contact c ON c.id = l.contact_id
+       LEFT JOIN crm_account a ON a.id = l.account_id
+       LEFT JOIN crm_product_category pc ON pc.id = l.product_category_id
+       JOIN crm_user u ON u.id = l.owner_user_id
      ${whereClause}
      ORDER BY l.received_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
@@ -475,6 +531,319 @@ export async function disqualifyLead(
   );
 
   return toLead(rows[0]);
+}
+
+/**
+ * Archives a lead.
+ * Sets archived_at = now() and archived_by_user_id = actor.userId.
+ * Preserves status, disqualification state, and all relations.
+ * Row-scope authorization: SALES_REP can only archive own leads.
+ */
+export async function archiveLead(
+  db: Db,
+  leadId: string,
+  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+): Promise<Lead> {
+  const lead = await findLeadById(db, leadId, actor);
+  if (!lead) throw new LeadNotFoundError(leadId);
+
+  if (lead.archivedAt !== null) {
+    throw new LeadAlreadyArchivedError();
+  }
+
+  const { rows } = await db.query<LeadRow>(
+    `UPDATE crm_lead
+       SET archived_at = now(),
+           archived_by_user_id = $2,
+           updated_at = now()
+     WHERE id = $1
+     RETURNING ${LEAD_RETURNING_COLUMNS}`,
+    [leadId, actor.userId],
+  );
+
+  return toLead(rows[0]);
+}
+
+/**
+ * Restores an archived lead.
+ * Clears archived_at and archived_by_user_id.
+ * Preserves everything else.
+ * Row-scope authorization: SALES_REP can only restore own leads.
+ */
+export async function restoreLead(
+  db: Db,
+  leadId: string,
+  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+): Promise<Lead> {
+  const lead = await findLeadById(db, leadId, actor);
+  if (!lead) throw new LeadNotFoundError(leadId);
+
+  if (lead.archivedAt === null) {
+    throw new LeadNotArchivedError();
+  }
+
+  const { rows } = await db.query<LeadRow>(
+    `UPDATE crm_lead
+       SET archived_at = NULL,
+           archived_by_user_id = NULL,
+           updated_at = now()
+     WHERE id = $1
+     RETURNING ${LEAD_RETURNING_COLUMNS}`,
+    [leadId],
+  );
+
+  return toLead(rows[0]);
+}
+
+/**
+ * Updates a lead's editable fields in a single transaction.
+ * Editable fields: source, campaign, product category, note, owner (manager/admin only), contact identity.
+ * Contact identity changes are validated for conflicts (Cases A-E).
+ * All changes succeed or all roll back.
+ */
+export interface UpdateLeadInput {
+  sourceId?: string | null;
+  campaignId?: string | null;
+  productCategoryId?: string | null;
+  note?: string | null;
+  ownerUserId?: string | null;
+  contact?: {
+    fullName?: string;
+    phone?: string | null;
+    email?: string | null;
+  };
+}
+
+export async function updateLead(
+  db: Db,
+  leadId: string,
+  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  input: UpdateLeadInput,
+): Promise<Lead> {
+  // First, verify lead exists and actor has access (row-scope)
+  const lead = await findLeadById(db, leadId, actor);
+  if (!lead) throw new LeadNotFoundError(leadId);
+
+  // Validate catalog references if provided
+  if (input.sourceId !== undefined) {
+    const { rows } = await db.query<{ id: string; is_active: boolean }>(
+      `SELECT id, is_active FROM crm_source WHERE id = $1`,
+      [input.sourceId],
+    );
+    if (!rows[0]) throw new Error('SOURCE_NOT_FOUND');
+    if (!rows[0].is_active) throw new Error('SOURCE_NOT_FOUND');
+  }
+
+  if (input.campaignId !== undefined && input.campaignId !== null) {
+    const { rows } = await db.query<{ id: string; source_id: string; is_active: boolean }>(
+      `SELECT id, source_id, is_active FROM crm_source_campaign WHERE id = $1`,
+      [input.campaignId],
+    );
+    if (!rows[0]) throw new Error('CAMPAIGN_MISMATCH');
+    if (!rows[0].is_active) throw new Error('CAMPAIGN_MISMATCH');
+    if (input.sourceId && rows[0].source_id !== input.sourceId) {
+      throw new Error('CAMPAIGN_MISMATCH');
+    }
+    if (!input.sourceId && lead.sourceId !== rows[0].source_id) {
+      throw new Error('CAMPAIGN_MISMATCH');
+    }
+  }
+
+  if (input.productCategoryId !== undefined && input.productCategoryId !== null) {
+    const { rows } = await db.query<{ id: string; is_active: boolean }>(
+      `SELECT id, is_active FROM crm_product_category WHERE id = $1`,
+      [input.productCategoryId],
+    );
+    if (!rows[0]) throw new Error('CATEGORY_NOT_FOUND');
+    if (!rows[0].is_active) throw new Error('CATEGORY_NOT_FOUND');
+  }
+
+  // Validate owner if provided (only for MANAGER/ADMIN)
+  if (input.ownerUserId !== undefined && input.ownerUserId !== null) {
+    if (actor.role === 'SALES_REP') {
+      throw new Error('UNAUTHORISED');
+    }
+    const { rows } = await db.query<{ id: string; is_active: boolean; role: string }>(
+      `SELECT id, is_active, role FROM crm_user WHERE id = $1`,
+      [input.ownerUserId],
+    );
+    if (!rows[0]) throw new Error('OWNER_NOT_FOUND');
+    if (!rows[0].is_active) throw new Error('OWNER_NOT_FOUND');
+    if (!['SALES_REP', 'SALES_MANAGER'].includes(rows[0].role)) {
+      throw new Error('OWNER_NOT_FOUND');
+    }
+  }
+
+  // Handle contact updates if provided
+  let contactId = lead.contactId;
+  if (input.contact && (input.contact.fullName !== undefined || input.contact.phone !== undefined || input.contact.email !== undefined)) {
+    const contactResult = await resolveContactUpdate(db, lead.contactId, input.contact);
+    if (contactResult.conflict) {
+      throw contactResult.conflict;
+    }
+    contactId = contactResult.contactId;
+  }
+
+  // Perform all updates in a single transaction
+  let client: PoolClient;
+  let shouldRelease = false;
+  if (db instanceof Pool) {
+    client = await db.connect();
+    shouldRelease = true;
+  } else {
+    client = db as PoolClient;
+  }
+
+  try {
+    await client.query('BEGIN');
+
+    // Update contact if changed
+    if (input.contact && (input.contact.fullName !== undefined || input.contact.phone !== undefined || input.contact.email !== undefined)) {
+      if (input.contact.fullName !== undefined) {
+        await client.query(
+          `UPDATE crm_contact SET full_name = $1, updated_at = now() WHERE id = $2`,
+          [input.contact.fullName.trim(), contactId],
+        );
+      }
+      if (input.contact.phone !== undefined) {
+        // Remove existing phone channels
+        await client.query(`DELETE FROM crm_contact_channel WHERE contact_id = $1 AND channel_type = 'PHONE'`, [contactId]);
+        if (input.contact.phone !== null && input.contact.phone.trim() !== '') {
+          const normalizedPhone = normalisePhoneToE164(input.contact.phone.trim());
+          await client.query(
+            `INSERT INTO crm_contact_channel (contact_id, channel_type, value) VALUES ($1, 'PHONE', $2)`,
+            [contactId, normalizedPhone],
+          );
+        }
+      }
+      if (input.contact.email !== undefined) {
+        const normalizedEmail = input.contact.email?.trim() ? normaliseEmail(input.contact.email.trim()) : null;
+        await client.query(
+          `UPDATE crm_contact SET email = $1, updated_at = now() WHERE id = $2`,
+          [normalizedEmail, contactId],
+        );
+      }
+    }
+
+    // Update lead fields
+    const updates: string[] = [];
+    const params: (string | null)[] = [leadId];
+    let paramIndex = 2;
+
+    if (input.sourceId !== undefined) {
+      updates.push(`source_id = $${paramIndex++}`);
+      params.push(input.sourceId);
+    }
+    if (input.campaignId !== undefined) {
+      updates.push(`campaign_id = $${paramIndex++}`);
+      params.push(input.campaignId);
+    }
+    if (input.productCategoryId !== undefined) {
+      updates.push(`product_category_id = $${paramIndex++}`);
+      params.push(input.productCategoryId);
+    }
+    if (input.note !== undefined) {
+      updates.push(`note = $${paramIndex++}`);
+      params.push(input.note?.trim() || null);
+    }
+    if (input.ownerUserId !== undefined) {
+      updates.push(`owner_user_id = $${paramIndex++}`);
+      params.push(input.ownerUserId);
+    }
+
+    if (updates.length > 0) {
+      updates.push('updated_at = now()');
+      const query = `UPDATE crm_lead SET ${updates.join(', ')} WHERE id = $1 RETURNING ${LEAD_RETURNING_COLUMNS}`;
+      const result = await client.query<LeadRow>(query, params);
+      await client.query('COMMIT');
+      return toLead(result.rows[0]);
+    } else {
+      // No lead fields to update, just commit contact changes
+      await client.query('COMMIT');
+      const lead = await findLeadById(db, leadId, actor);
+      if (!lead) throw new LeadNotFoundError(leadId);
+      return lead;
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    if (shouldRelease && 'release' in client) {
+      client.release();
+    }
+  }
+}
+
+/**
+ * Resolves contact identity updates with conflict detection (Cases A-E).
+ * Returns the canonical contact ID or throws IdentityConflictError.
+ */
+async function resolveContactUpdate(
+  db: Db,
+  contactId: string,
+  input: { fullName?: string; phone?: string | null; email?: string | null },
+): Promise<{ contactId: string; conflict?: IdentityConflictError }> {
+  const { fullName, phone, email } = input;
+
+  const normalizedPhone = phone?.trim() ? normalisePhoneToE164(phone.trim()) : null;
+  const normalizedEmail = email?.trim() ? normaliseEmail(email.trim()) : null;
+
+  // If no phone/email changes, just return current contact
+  if (!normalizedPhone && !normalizedEmail) {
+    if (fullName !== undefined) {
+      // Only name change - safe to update
+      return { contactId };
+    }
+    return { contactId };
+  }
+
+  // Look up existing contacts by phone and email (excluding current contact)
+  const phoneContact = normalizedPhone
+    ? await db
+        .query<{ id: string; full_name: string; email: string | null; is_active: boolean }>(
+          `SELECT c.id, c.full_name, c.email, c.is_active
+             FROM crm_contact c
+             JOIN crm_contact_channel ch ON ch.contact_id = c.id
+            WHERE ch.channel_type = 'PHONE' AND ch.value = $1 AND c.id != $2`,
+          [normalizedPhone, contactId],
+        )
+        .then(({ rows }) => (rows[0] ? { id: rows[0].id, full_name: rows[0].full_name, email: rows[0].email, is_active: rows[0].is_active } : null))
+    : null;
+
+  const emailContact = normalizedEmail
+    ? await db
+        .query<{ id: string; full_name: string; email: string | null; is_active: boolean }>(
+          `SELECT id, full_name, email, is_active FROM crm_contact WHERE email = $1 AND id != $2`,
+          [normalizedEmail, contactId],
+        )
+        .then(({ rows }) => (rows[0] ? { id: rows[0].id, full_name: rows[0].full_name, email: rows[0].email, is_active: rows[0].is_active } : null))
+    : null;
+
+  // Case A: Both resolve to SAME contact (different from current)
+  if (phoneContact && emailContact && phoneContact.id === emailContact.id) {
+    // This would mean moving lead to another contact - conflict
+    throw new IdentityConflictError(phoneContact.id, emailContact.id);
+  }
+
+  // Case C: Phone resolves to another contact
+  if (phoneContact && !emailContact) {
+    throw new IdentityConflictError(phoneContact.id, '');
+  }
+
+  // Case D: Email resolves to another contact
+  if (!phoneContact && emailContact) {
+    throw new IdentityConflictError('', emailContact.id);
+  }
+
+  // Case E: Phone and email resolve to DIFFERENT contacts
+  if (phoneContact && emailContact && phoneContact.id !== emailContact.id) {
+    throw new IdentityConflictError(phoneContact.id, emailContact.id);
+  }
+
+  // Case B: New phone/email is unused - safe to update current contact
+  // Case A (same contact): both resolve to current contact - safe
+
+  return { contactId };
 }
 
 /**

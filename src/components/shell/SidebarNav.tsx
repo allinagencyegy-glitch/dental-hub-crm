@@ -3,21 +3,35 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { NavItem } from './navigation';
+import { CrmIcon } from '@/components/crm/CrmIcon';
+
+const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'followups' | 'quotation' | 'reports' | 'team' | 'settings'> = {
+  Home: 'home',
+  Leads: 'leads',
+  Customers: 'customers',
+  Pipeline: 'pipeline',
+  'Follow-ups': 'followups',
+  Quotations: 'quotation',
+  Reports: 'reports',
+  Team: 'team',
+  Settings: 'settings',
+  Users: 'settings',
+};
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+  const Icon = navIcons[item.label] || 'home';
   // Reserved-but-unimplemented destinations render as inert text. No href, so
   // there is nothing to click and no fake page behind it.
   if (item.status !== 'available' || !item.href) {
     return (
       <span
         aria-disabled="true"
-        title="Not available in Foundation v0"
-        className="flex cursor-not-allowed select-none items-center justify-between rounded-md px-3 py-2 text-sm text-slate-500"
+        title="Not yet implemented"
+        className="flex cursor-not-allowed select-none items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-white/28"
       >
+        <CrmIcon name={Icon} className="h-[18px] w-[18px]" />
         {item.label}
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-          Soon
-        </span>
+        <span className="ml-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">Soon</span>
       </span>
     );
   }
@@ -26,12 +40,9 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       href={item.href}
       aria-current={active ? 'page' : undefined}
-      className={
-        active
-          ? 'block rounded-md bg-teal-500/15 px-3 py-2 text-sm font-medium text-teal-200'
-          : 'block rounded-md px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 hover:text-white'
-      }
+      className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition ${active ? 'bg-[#18b6a4] text-white shadow-[0_7px_22px_rgba(24,182,164,0.18)]' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
     >
+      <CrmIcon name={Icon} className={`h-[18px] w-[18px] ${active ? 'text-white' : 'text-white/42 group-hover:text-white/70'}`} />
       {item.label}
     </Link>
   );
@@ -43,10 +54,10 @@ export function SidebarNav({ title, items }: { title: string; items: NavItem[] }
 
   return (
     <div className="mb-6">
-      <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+      <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">
         {title}
       </p>
-      <nav className="flex flex-col gap-0.5">
+      <nav className="space-y-1" aria-label={title}>
         {items.map((item) => (
           <NavLink key={item.label} item={item} active={item.href === pathname} />
         ))}

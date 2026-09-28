@@ -6,7 +6,8 @@ export type CrmIconName =
   | 'plus' | 'filter' | 'calendar' | 'clock' | 'phone'
   | 'message' | 'mail' | 'meeting' | 'demo' | 'money'
   | 'alert' | 'more' | 'arrow' | 'building' | 'location' | 'check'
-  | 'sparkles' | 'pause' | 'target' | 'external' | 'activity' | 'x';
+  | 'sparkles' | 'pause' | 'target' | 'external' | 'activity' | 'x'
+  | 'archive' | 'edit' | 'unarchive';
 
 export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVGSVGElement>) {
   const paths: Record<CrmIconName, React.ReactNode> = {
@@ -39,6 +40,9 @@ export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVG
     check: <path d="m5 12 4 4L19 6"/>, sparkles: <><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2zM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/></>,
     pause: <><path d="M8 5v14M16 5v14"/></>, target: <><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
     external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v7H4V6h7"/></>, activity: <><path d="M3 12h4l2-7 4 14 2-7h6"/></>, x: <><path d="M18 6 6 18M6 6l12 12"/></>,
+    archive: <><path d="M21 8v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h6l2 3h3a2 2 0 0 1 2 2Z"/><path d="M9 12v5M15 12v5"/></>,
+    edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5a2.121 2.121 0 0 1 3 0Z"/></>,
+    unarchive: <><path d="M21 8v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h6l2 3h3a2 2 0 0 1 2 2Z"/><path d="M9 12v5M15 12v5"/><path d="M9 9v0.01M15 9v0.01"/></>,
   };
 
   return (

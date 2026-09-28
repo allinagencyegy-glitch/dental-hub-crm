@@ -36,6 +36,7 @@ describe('migrations', () => {
       { version: 2, name: 'crm_catalogs' },
       { version: 3, name: 'crm_identity' },
       { version: 4, name: 'crm_leads' },
+      { version: 5, name: 'crm_lead_archiving' },
     ]);
     expect(outcome.skipped).toEqual([]);
 
@@ -69,12 +70,13 @@ describe('migrations', () => {
       { version: 2, name: 'crm_catalogs' },
       { version: 3, name: 'crm_identity' },
       { version: 4, name: 'crm_leads' },
+      { version: 5, name: 'crm_lead_archiving' },
     ]);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('4');
+    expect(rows[0].count).toBe('5');
   });
 
   it('records a checksum for every applied migration', async () => {
