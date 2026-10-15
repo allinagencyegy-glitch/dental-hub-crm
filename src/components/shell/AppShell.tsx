@@ -35,8 +35,11 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex overflow-hidden bg-[#f4f6f8] text-[#17212b]">
-      <aside className="hidden w-[252px] shrink-0 flex-col bg-[#101c24] text-white lg:flex">
+    // print:static/print:overflow-visible: the CRM shell is fixed and scrollable,
+    // which would clip the customer-facing quotation when printing. The shell
+    // chrome itself is hidden in print; the document flows normally.
+    <div className="fixed inset-0 z-[100] flex overflow-hidden bg-[#f4f6f8] text-[#17212b] print:static print:overflow-visible print:bg-white">
+      <aside className="hidden w-[252px] shrink-0 flex-col bg-[#101c24] text-white lg:flex print:hidden">
         <div className="flex h-[76px] items-center gap-3 border-b border-white/[0.07] px-6">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#18b6a4] shadow-[0_8px_24px_rgba(24,182,164,0.22)]">
             <span className="text-lg font-bold tracking-[-0.08em]">DH</span>
@@ -105,8 +108,8 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[76px] shrink-0 items-center gap-5 border-b border-[#dfe5e8] bg-white/95 px-5 backdrop-blur-xl xl:px-8">
+      <div className="flex min-w-0 flex-1 flex-col print:block">
+        <header className="flex h-[76px] shrink-0 items-center gap-5 border-b border-[#dfe5e8] bg-white/95 px-5 backdrop-blur-xl xl:px-8 print:hidden">
           {/* No global search or notifications in this slice: both were dead
               controls and have been removed rather than left faked. */}
           <div className="ml-auto flex items-center gap-2.5">
@@ -117,8 +120,8 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1680px] px-5 py-6 xl:px-8 xl:py-7">{children}</div>
+        <main className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
+          <div className="mx-auto w-full max-w-[1680px] px-5 py-6 xl:px-8 xl:py-7 print:max-w-none print:p-0">{children}</div>
         </main>
       </div>
     </div>

@@ -37,6 +37,12 @@ import {
 } from '@/server/crm/opportunities/repository';
 import { createFollowUp } from '@/server/crm/opportunities/followups';
 import type { FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import {
+  createQuotation,
+  createRevision,
+  transitionQuotation,
+} from '@/server/crm/quotations/repository';
+import type { QuotationStatus } from '@/server/crm/quotations/status';
 
 loadEnv();
 
@@ -300,6 +306,67 @@ async function main(): Promise<void> {
         [followUp.id],
       );
       console.log('  created   follow-up', spec.bucket, followUp.id);
+    }
+
+    // 6. Quotations: one per lifecycle state plus a revision chain, so the
+    //    opportunity page, the quotation workspace and the print view can all
+    //    be verified against real rows.
+    const quotationSpecs: { marker: string; status: QuotationStatus; tax: number }[] = [
+      { marker: '[acceptance] quotation draft', status: 'DRAFT', tax: 10000 },
+      { marker: '[acceptance] quotation sent', status: 'SENT', tax: 10000 },
+      { marker: '[acceptance] quotation accepted', status: 'ACCEPTED', tax: 12000 },
+      { marker: '[acceptance] quotation rejected', status: 'REJECTED', tax: 0 },
+    ];
+
+    for (const spec of quotationSpecs) {
+      const { rows: existing } = await client.query<{ id: string }>(
+        `SELECT id FROM crm_quotation WHERE opportunity_id = $1 AND notes = $2`,
+        [opportunityId, spec.marker],
+      );
+      if (existing.length > 0) {
+        console.log('  exists    quotation', spec.status, existing[0].id);
+        continue;
+      }
+
+      const quotation = await createQuotation(client, actor, {
+        opportunityId,
+        items: [
+          { description: 'Dental unit - premium chair package', quantity: 1, unitPrice: 210000 },
+          { description: 'Delivery, installation and staff training', quantity: 1, unitPrice: 15000 },
+          { description: 'First-year service contract', quantity: 1, unitPrice: 18000 },
+        ],
+        discountAmount: spec.status === 'REJECTED' ? 0 : 5000,
+        taxAmount: spec.tax,
+        notes: spec.marker,
+        termsConditions: '50% deposit with order, balance before delivery. Warranty per manufacturer terms.',
+        validUntil: new Date(Date.now() + 30 * 86_400_000),
+      });
+      if (spec.status === 'ACCEPTED' || spec.status === 'REJECTED') {
+        await transitionQuotation(client, quotation.id, actor, 'SENT');
+        await transitionQuotation(client, quotation.id, actor, spec.status);
+      } else if (spec.status !== 'DRAFT') {
+        await transitionQuotation(client, quotation.id, actor, spec.status);
+      }
+      console.log('  created   quotation', spec.status, quotation.id, quotation.quoteNumber);
+    }
+
+    // Revision chain: the SENT quotation gets a newer DRAFT revision, so the
+    // "revises Q-..." lineage renders in the UI.
+    const { rows: sentRows } = await client.query<{ id: string }>(
+      `SELECT id FROM crm_quotation WHERE opportunity_id = $1 AND notes = $2`,
+      [opportunityId, '[acceptance] quotation sent'],
+    );
+    if (sentRows.length > 0) {
+      const { rows: revisionRows } = await client.query<{ id: string }>(
+        `SELECT id FROM crm_quotation WHERE previous_quote_id = $1`,
+        [sentRows[0].id],
+      );
+      if (revisionRows.length === 0) {
+        const revision = await createRevision(client, sentRows[0].id, actor);
+        console.log('  created   quotation revision', revision.id, revision.quoteNumber);
+      } else {
+        console.log('  exists    quotation revision', revisionRows[0].id);
+      }
     }
 
     console.log('\nAcceptance data ready. Sign in as:');

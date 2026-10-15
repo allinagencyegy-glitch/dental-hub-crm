@@ -27,6 +27,7 @@ import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/op
 import type { OpportunityActivityEntry } from '@/server/crm/opportunities/repository';
 import type { StageHistoryEntry } from '@/server/crm/opportunities/repository';
 import type { FollowUp } from '@/server/crm/opportunities/followups';
+import type { QuotationListItem } from '@/server/crm/quotations/repository';
 
 type Role = 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
 
@@ -41,18 +42,18 @@ interface OpportunityDetailProps {
   allowedStages: readonly OpportunityStage[];
   stageHistory: StageHistoryEntry[];
   activity: OpportunityActivityEntry[];
+  quotations: QuotationListItem[];
+  canCreateQuotation: boolean;
   /** Server-rendered timestamp used for every overdue calculation. */
   now: number;
 }
 
-const STAGE_CHIP: Record<OpportunityStage, string> = {
-  QUALIFIED: 'bg-[#f1edff] text-[#6d52be]',
-  NEEDS_ANALYSIS: 'bg-[#e9f7ff] text-[#137aa9]',
-  PROPOSAL: 'bg-[#e8f4ff] text-[#287bb5]',
-  NEGOTIATION: 'bg-[#fff0e5] text-[#b45b1b]',
-  ON_HOLD: 'bg-[#edf0f2] text-[#63707a]',
-  WON: 'bg-[#e8f8f1] text-[#14815f]',
-  LOST: 'bg-[#ffe9ea] text-[#c43f47]',
+const QUOTATION_STATUS_CHIP: Record<QuotationListItem['status'], string> = {
+  DRAFT: 'bg-[#edf0f2] text-[#63707a]',
+  SENT: 'bg-[#e8f4ff] text-[#287bb5]',
+  ACCEPTED: 'bg-[#e8f8f1] text-[#14815f]',
+  REJECTED: 'bg-[#ffe9ea] text-[#c43f47]',
+  EXPIRED: 'bg-[#f1edff] text-[#6d52be]',
 };
 
 const ACTIVITY_ICON: Record<string, CrmIconName> = {
@@ -62,6 +63,22 @@ const ACTIVITY_ICON: Record<string, CrmIconName> = {
   FOLLOW_UP_RESCHEDULED: 'clock',
   NOTE_ADDED: 'edit',
   OWNER_CHANGED: 'team',
+  QUOTATION_CREATED: 'quotation',
+  QUOTATION_REVISED: 'quotation',
+  QUOTATION_SENT: 'mail',
+  QUOTATION_ACCEPTED: 'check',
+  QUOTATION_REJECTED: 'x',
+  QUOTATION_EXPIRED: 'clock',
+};
+
+const STAGE_CHIP: Record<OpportunityStage, string> = {
+  QUALIFIED: 'bg-[#f1edff] text-[#6d52be]',
+  NEEDS_ANALYSIS: 'bg-[#e9f7ff] text-[#137aa9]',
+  PROPOSAL: 'bg-[#e8f4ff] text-[#287bb5]',
+  NEGOTIATION: 'bg-[#fff0e5] text-[#b45b1b]',
+  ON_HOLD: 'bg-[#edf0f2] text-[#63707a]',
+  WON: 'bg-[#e8f8f1] text-[#14815f]',
+  LOST: 'bg-[#ffe9ea] text-[#c43f47]',
 };
 
 function formatEgp(value: number | null): string {
@@ -88,9 +105,13 @@ export function OpportunityDetail({
   allowedStages,
   stageHistory,
   activity,
+  quotations,
+  canCreateQuotation,
   now,
 }: OpportunityDetailProps) {
   const router = useRouter();
+
+  const latestQuotation = quotations.length > 0 ? quotations[quotations.length - 1] : null;
 
   // "Now" arrives from the server render. It is the same value for the whole
   // pass, so every overdue flag derived from it agrees and stays stable across
@@ -593,6 +614,88 @@ export function OpportunityDetail({
             )}
           </section>
 
+          {/* Quotation workspace: the commercial document history of this deal. */}
+          <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
+            <SectionTitle
+              title="Quotations"
+              subtitle={
+                quotations.length === 0
+                  ? 'No quotation created yet'
+                  : `${quotations.length} quotation${quotations.length === 1 ? '' : 's'} on record`
+              }
+            />
+            <div className="px-5 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {canCreateQuotation ? (
+                  <Link
+                    href={`/crm/quotations/new?opportunity=${opportunity.id}`}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#132932] px-3 text-[11px] font-semibold text-white transition hover:bg-[#1b3944]"
+                  >
+                    <CrmIcon name="plus" className="h-3.5 w-3.5" />
+                    New quotation
+                  </Link>
+                ) : null}
+                {latestQuotation ? (
+                  <Link
+                    href={`/crm/quotations/${latestQuotation.id}`}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+                  >
+                    <CrmIcon name="quotation" className="h-3.5 w-3.5" />
+                    Open latest
+                  </Link>
+                ) : null}
+              </div>
+
+              {quotations.length === 0 ? (
+                <p className="mt-4 text-[11px] leading-5 text-[#8b969e]">
+                  {isClosed
+                    ? 'This deal is closed, so no new quotation can be created.'
+                    : 'Create a quotation to price the equipment for this customer. Quotations stay on the record forever — sent, accepted and rejected alike.'}
+                </p>
+              ) : (
+                <ul className="mt-3 divide-y divide-[#edf0f1]">
+                  {quotations.map((quotation) => (
+                    <li key={quotation.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-3">
+                      <Link
+                        href={`/crm/quotations/${quotation.id}`}
+                        className="text-[11px] font-bold text-[#188c81] hover:underline"
+                      >
+                        {quotation.quoteNumber}
+                      </Link>
+                      {quotation.version > 1 ? (
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.06em] text-[#9aa3aa]">
+                          v{quotation.version}
+                        </span>
+                      ) : null}
+                      <span
+                        className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.06em] ${QUOTATION_STATUS_CHIP[quotation.status]}`}
+                      >
+                        {quotation.status}
+                      </span>
+                      {quotation.previousQuoteNumber ? (
+                        <span className="text-[9px] text-[#9aa3aa]">
+                          revises {quotation.previousQuoteNumber}
+                        </span>
+                      ) : null}
+                      <span className="ml-auto whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
+                        {quotation.totalAmount.toLocaleString('en-EG', {
+                          style: 'currency',
+                          currency: 'EGP',
+                          maximumFractionDigits: 0,
+                        })}
+                      </span>
+                      <span className="text-[9px] text-[#929da4]">
+                        {quotation.sentAt
+                          ? `sent ${quotation.sentAt.toLocaleDateString()}`
+                          : `updated ${quotation.updatedAt.toLocaleDateString()}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
           {/* Commercial details. */}
           <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <SectionTitle title="Opportunity details" subtitle="Ownership and commercial fields" />
@@ -904,10 +1007,58 @@ export function OpportunityDetail({
               <h2 className="text-xs font-semibold text-[#2b3841]">Commercial document</h2>
               <Badge value="QUOTATION" />
             </div>
-            <p className="mt-3 text-[9px] leading-4 text-[#8b969e]">
-              Quotation workspace is planned. SEND_QUOTATION is available as a follow-up action
-              type, but no quotation is generated here.
-            </p>
+            {latestQuotation ? (
+              <div className="mt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/crm/quotations/${latestQuotation.id}`}
+                    className="text-[13px] font-bold text-[#188c81] hover:underline"
+                  >
+                    {latestQuotation.quoteNumber}
+                  </Link>
+                  <span
+                    className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.06em] ${QUOTATION_STATUS_CHIP[latestQuotation.status]}`}
+                  >
+                    {latestQuotation.status}
+                  </span>
+                </div>
+                <p className="mt-2 text-[19px] font-semibold tracking-[-0.04em] text-[#17242d]">
+                  {latestQuotation.totalAmount.toLocaleString('en-EG', {
+                    style: 'currency',
+                    currency: 'EGP',
+                    maximumFractionDigits: 0,
+                  })}
+                </p>
+                <p className="mt-1 text-[9px] text-[#8b969e]">
+                  {latestQuotation.sentAt
+                    ? `Sent ${latestQuotation.sentAt.toLocaleDateString()}`
+                    : `Updated ${latestQuotation.updatedAt.toLocaleDateString()}`}
+                  {latestQuotation.version > 1 ? ` · version ${latestQuotation.version}` : null}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <Link
+                    href={`/crm/quotations/${latestQuotation.id}`}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-2.5 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+                  >
+                    <CrmIcon name="quotation" className="h-3 w-3" />
+                    Open quotation
+                  </Link>
+                  <Link
+                    href={`/crm/quotations/${latestQuotation.id}/print`}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-2.5 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+                  >
+                    <CrmIcon name="external" className="h-3 w-3" />
+                    Print view
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-[10px] leading-4 text-[#8b969e]">
+                {canCreateQuotation
+                  ? 'No quotation yet. Create one to price this deal.'
+                  : 'No quotation on record for this deal.'}
+              </p>
+            )}
           </section>
 
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">

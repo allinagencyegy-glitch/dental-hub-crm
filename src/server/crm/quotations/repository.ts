@@ -1,0 +1,917 @@
+﻿/**
+ * All SQL touching crm_quotation, crm_quotation_item and crm_quotation_revision.
+ *
+ * Commercial truth is never mutated silently:
+ *   * only a DRAFT may be edited, and every edit snapshots the outgoing state
+ *     into crm_quotation_revision first;
+ *   * a SENT / ACCEPTED / REJECTED / EXPIRED row is immutable - the only way
+ *     past it is a revision, which is a NEW row chained through
+ *     previous_quote_id (version = parent version + 1, new quote number);
+ *   * nothing here ever deletes a quotation.
+ *
+ * Row scope: SALES_REP sees only quotations whose opportunity they own. A row
+ * outside the actor's scope reads as absent, so an unauthorised lookup cannot
+ * be used to discover that a record exists.
+ */
+import type { Db } from '@/server/db/types';
+import {
+  beginTransaction,
+  commitTransaction,
+  rollbackTransaction,
+} from '@/server/db/transaction';
+import { findOpportunityById, recordOpportunityActivity } from '@/server/crm/opportunities/repository';
+import {
+  canTransition,
+  isRevisionAllowed,
+  isQuotationStatus,
+  type QuotationStatus,
+} from './status';
+
+export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class QuotationNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Quotation ${id} not found.`);
+    this.name = 'QuotationNotFoundError';
+  }
+}
+
+export class InvalidQuotationTransitionError extends Error {
+  constructor(from: QuotationStatus, to: QuotationStatus) {
+    super(`Invalid quotation status transition: ${from} → ${to}.`);
+    this.name = 'InvalidQuotationTransitionError';
+  }
+}
+
+export class QuotationNotDraftError extends Error {
+  constructor(status: QuotationStatus) {
+    super(`Only a draft quotation can be edited (current status: ${status}).`);
+    this.name = 'QuotationNotDraftError';
+  }
+}
+
+export class QuotationRevisionNotAllowedError extends Error {
+  constructor(status: QuotationStatus) {
+    super(`A ${status} quotation cannot be revised.`);
+    this.name = 'QuotationRevisionNotAllowedError';
+  }
+}
+
+export class ClosedOpportunityError extends Error {
+  constructor() {
+    super('This opportunity is closed, so no new quotation can be created.');
+    this.name = 'ClosedOpportunityError';
+  }
+}
+
+export class InvalidQuotationItemsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidQuotationItemsError';
+  }
+}
+
+export class InvalidQuotationAmountsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidQuotationAmountsError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shapes
+// ---------------------------------------------------------------------------
+
+export interface QuotationItem {
+  id: string;
+  quotationId: string;
+  sequence: number;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface QuotationItemInput {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface QuotationCommercialInput {
+  items: QuotationItemInput[];
+  discountAmount?: number;
+  taxAmount?: number;
+  notes?: string | null;
+  termsConditions?: string | null;
+  validUntil?: Date | null;
+}
+
+export interface Quotation {
+  id: string;
+  opportunityId: string;
+  contactId: string;
+  accountId: string | null;
+  quoteNumber: string;
+  version: number;
+  status: QuotationStatus;
+  currency: string;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  notes: string | null;
+  termsConditions: string | null;
+  validUntil: Date | null;
+  sentAt: Date | null;
+  acceptedAt: Date | null;
+  rejectedAt: Date | null;
+  expiredAt: Date | null;
+  previousQuoteId: string | null;
+  previousQuoteNumber: string | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A quotation plus the identity data the UI and the printable document show. */
+export interface QuotationDetail extends Quotation {
+  items: QuotationItem[];
+  contactName: string;
+  contactEmail: string | null;
+  accountName: string | null;
+  opportunityStage: string;
+  ownerName: string;
+  createdByName: string;
+}
+
+/** The light row the opportunity page lists; items live on the detail query. */
+export interface QuotationListItem {
+  id: string;
+  quoteNumber: string;
+  version: number;
+  status: QuotationStatus;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  sentAt: Date | null;
+  previousQuoteNumber: string | null;
+}
+
+export interface QuotationRevisionSnapshot {
+  id: string;
+  quotationId: string;
+  version: number;
+  status: QuotationStatus;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  notes: string | null;
+  termsConditions: string | null;
+  validUntil: Date | null;
+  changedBy: string;
+  changedByName: string | null;
+  changedAt: Date;
+  changeReason: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type QuotationRow = {
+  id: string;
+  opportunity_id: string;
+  contact_id: string;
+  account_id: string | null;
+  quote_number: string;
+  version: number;
+  status: QuotationStatus;
+  currency: string;
+  subtotal: string;
+  discount_amount: string;
+  tax_amount: string;
+  total_amount: string;
+  notes: string | null;
+  terms_conditions: string | null;
+  valid_until: Date | null;
+  sent_at: Date | null;
+  accepted_at: Date | null;
+  rejected_at: Date | null;
+  expired_at: Date | null;
+  previous_quote_id: string | null;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
+};
+
+const QUOTATION_COLUMNS = `
+  id, opportunity_id, contact_id, account_id, quote_number, version, status,
+  currency, subtotal, discount_amount, tax_amount, total_amount, notes,
+  terms_conditions, valid_until, sent_at, accepted_at, rejected_at, expired_at,
+  previous_quote_id, created_by, created_at, updated_at
+`;
+
+const QUOTATION_COLUMNS_Q = `
+  q.id, q.opportunity_id, q.contact_id, q.account_id, q.quote_number, q.version,
+  q.status, q.currency, q.subtotal, q.discount_amount, q.tax_amount,
+  q.total_amount, q.notes, q.terms_conditions, q.valid_until, q.sent_at,
+  q.accepted_at, q.rejected_at, q.expired_at, q.previous_quote_id, q.created_by,
+  q.created_at, q.updated_at
+`;
+
+function toQuotation(row: QuotationRow & { previous_quote_number?: string | null }): Quotation {
+  return {
+    id: row.id,
+    opportunityId: row.opportunity_id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    quoteNumber: row.quote_number,
+    version: row.version,
+    status: row.status,
+    currency: row.currency,
+    subtotal: Number(row.subtotal),
+    discountAmount: Number(row.discount_amount),
+    taxAmount: Number(row.tax_amount),
+    totalAmount: Number(row.total_amount),
+    notes: row.notes,
+    termsConditions: row.terms_conditions,
+    validUntil: row.valid_until,
+    sentAt: row.sent_at,
+    acceptedAt: row.accepted_at,
+    rejectedAt: row.rejected_at,
+    expiredAt: row.expired_at,
+    previousQuoteId: row.previous_quote_id,
+    previousQuoteNumber: row.previous_quote_number ?? null,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+type QuotationItemRow = {
+  id: string;
+  quotation_id: string;
+  sequence: number;
+  description: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+};
+
+function toQuotationItem(row: QuotationItemRow): QuotationItem {
+  return {
+    id: row.id,
+    quotationId: row.quotation_id,
+    sequence: row.sequence,
+    description: row.description,
+    quantity: Number(row.quantity),
+    unitPrice: Number(row.unit_price),
+    lineTotal: Number(row.line_total),
+  };
+}
+
+/** numeric(14,2) inputs travel as two-decimal strings so no float rounding sneaks in. */
+export function money(value: number): string {
+  return Number(value).toFixed(2);
+}
+
+/** numeric(10,2) quantities, same reasoning. */
+export function quantity(value: number): string {
+  return Number(value).toFixed(2);
+}
+
+/** Appends the SALES_REP row-scope clause. `o` is the crm_opportunity alias. */
+function pushScope(
+  clauses: string[],
+  params: (string | number | Date | null)[],
+  actor: Actor,
+): void {
+  if (actor.role !== 'SALES_REP') return;
+  params.push(actor.userId);
+  clauses.push(`o.owner_user_id = $${params.length}`);
+}
+
+/** Generates the next unique, human-readable quotation number. */
+async function nextQuoteNumber(db: Db): Promise<string> {
+  const { rows } = await db.query<{ nextval: string }>(
+    `SELECT nextval('crm_quotation_number_seq')::text AS nextval`,
+  );
+  return `Q-${String(rows[0].nextval).padStart(5, '0')}`;
+}
+
+/**
+ * Sum of the items the caller is about to insert, computed by PostgreSQL in
+ * exact numeric arithmetic. The value is validated by the service before the
+ * write, and again derived from the actually-inserted rows afterwards.
+ */
+async function sumItemTotals(db: Db, items: QuotationItemInput[]): Promise<number> {
+  const { rows } = await db.query<{ subtotal: string }>(
+    `SELECT round(sum(quantity * unit_price), 2)::text AS subtotal
+       FROM unnest($1::numeric[], $2::numeric[]) AS t(quantity, unit_price)`,
+    [items.map((item) => quantity(item.quantity)), items.map((item) => money(item.unitPrice))],
+  );
+  return Number(rows[0].subtotal);
+}
+
+/**
+ * Appends an immutable snapshot of a quotation's commercial content. The
+ * snapshot version is per-quotation, so the log reads 1, 2, 3... for one row.
+ */
+async function snapshotQuotation(
+  db: Db,
+  quotation: Quotation,
+  changedBy: string,
+  changeReason: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO crm_quotation_revision
+       (quotation_id, version, status, subtotal, discount_amount, tax_amount,
+        total_amount, notes, terms_conditions, valid_until, changed_by, change_reason)
+     VALUES (
+       $1,
+       (SELECT COALESCE(MAX(version), 0) + 1 FROM crm_quotation_revision WHERE quotation_id = $1),
+       $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+     )`,
+    [
+      quotation.id,
+      quotation.status,
+      money(quotation.subtotal),
+      money(quotation.discountAmount),
+      money(quotation.taxAmount),
+      money(quotation.totalAmount),
+      quotation.notes,
+      quotation.termsConditions,
+      quotation.validUntil,
+      changedBy,
+      changeReason,
+    ],
+  );
+}
+
+function insertItemRows(
+  db: Db,
+  quotationId: string,
+  items: QuotationItemInput[],
+): Promise<unknown> {
+  // One statement for all rows; line totals are rounded in SQL so the CHECK
+  // (line_total = round(quantity * unit_price, 2)) and the stored value agree.
+  return db.query(
+    `INSERT INTO crm_quotation_item (quotation_id, sequence, description, quantity, unit_price, line_total)
+     SELECT $1::uuid, t.ord::int, t.description, t.quantity::numeric, t.unit_price::numeric,
+            round(t.quantity::numeric * t.unit_price::numeric, 2)
+       FROM unnest($2::text[], $3::numeric[], $4::numeric[])
+         WITH ORDINALITY AS t(description, quantity, unit_price, ord)`,
+    [
+      quotationId,
+      items.map((item) => item.description),
+      items.map((item) => quantity(item.quantity)),
+      items.map((item) => money(item.unitPrice)),
+    ],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
+/** Reads one quotation within the actor's row scope. Null = missing or out of scope. */
+export async function findQuotationById(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+): Promise<Quotation | null> {
+  const clauses = ['q.id = $1'];
+  const params: (string | number | Date | null)[] = [quotationId];
+  pushScope(clauses, params, actor);
+
+  const { rows } = await db.query<QuotationRow & { previous_quote_number: string | null }>(
+    `SELECT ${QUOTATION_COLUMNS_Q}, prev.quote_number AS previous_quote_number
+       FROM crm_quotation q
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+       LEFT JOIN crm_quotation prev ON prev.id = q.previous_quote_id
+      WHERE ${clauses.join(' AND ')}`,
+    params,
+  );
+
+  return rows[0] ? toQuotation(rows[0]) : null;
+}
+
+async function listItems(db: Db, quotationId: string): Promise<QuotationItem[]> {
+  const { rows } = await db.query<QuotationItemRow>(
+    `SELECT id, quotation_id, sequence, description, quantity, unit_price, line_total
+       FROM crm_quotation_item
+      WHERE quotation_id = $1
+      ORDER BY sequence ASC`,
+    [quotationId],
+  );
+  return rows.map(toQuotationItem);
+}
+
+/** A quotation plus its items and the identity data the document shows. */
+export async function findQuotationDetailById(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+): Promise<QuotationDetail | null> {
+  const clauses = ['q.id = $1'];
+  const params: (string | number | Date | null)[] = [quotationId];
+  pushScope(clauses, params, actor);
+
+  const { rows } = await db.query<
+    QuotationRow & {
+      previous_quote_number: string | null;
+      contact_name: string;
+      contact_email: string | null;
+      account_name: string | null;
+      opportunity_stage: string;
+      owner_name: string;
+      created_by_name: string;
+    }
+  >(
+    `SELECT ${QUOTATION_COLUMNS_Q},
+            prev.quote_number AS previous_quote_number,
+            c.full_name      AS contact_name,
+            c.email          AS contact_email,
+            a.name           AS account_name,
+            o.stage          AS opportunity_stage,
+            owner.display_name AS owner_name,
+            creator.display_name AS created_by_name
+       FROM crm_quotation q
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+       JOIN crm_contact c     ON c.id = q.contact_id
+       JOIN crm_user owner    ON owner.id = o.owner_user_id
+       JOIN crm_user creator  ON creator.id = q.created_by
+       LEFT JOIN crm_account a ON a.id = q.account_id
+       LEFT JOIN crm_quotation prev ON prev.id = q.previous_quote_id
+      WHERE ${clauses.join(' AND ')}`,
+    params,
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const items = await listItems(db, row.id);
+  return {
+    ...toQuotation(row),
+    items,
+    contactName: row.contact_name,
+    contactEmail: row.contact_email,
+    accountName: row.account_name,
+    opportunityStage: row.opportunity_stage,
+    ownerName: row.owner_name,
+    createdByName: row.created_by_name,
+  };
+}
+
+/**
+ * The commercial history of one opportunity, oldest first (a chain is read
+ * top-down). Authorised against the opportunity: an actor who cannot see the
+ * deal gets an empty list, exactly like the activity feed.
+ */
+export async function listQuotationsForOpportunity(
+  db: Db,
+  opportunityId: string,
+  actor: Actor,
+): Promise<QuotationListItem[]> {
+  const opportunity = await findOpportunityById(db, opportunityId, actor);
+  if (!opportunity) return [];
+
+  const { rows } = await db.query<
+    QuotationRow & { previous_quote_number: string | null }
+  >(
+    `SELECT ${QUOTATION_COLUMNS_Q}, prev.quote_number AS previous_quote_number
+       FROM crm_quotation q
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+       LEFT JOIN crm_quotation prev ON prev.id = q.previous_quote_id
+      WHERE q.opportunity_id = $1
+      ORDER BY q.created_at ASC, q.id ASC`,
+    [opportunityId],
+  );
+
+  return rows.map((row) => {
+    const quotation = toQuotation(row);
+    return {
+      id: quotation.id,
+      quoteNumber: quotation.quoteNumber,
+      version: quotation.version,
+      status: quotation.status,
+      subtotal: quotation.subtotal,
+      discountAmount: quotation.discountAmount,
+      taxAmount: quotation.taxAmount,
+      totalAmount: quotation.totalAmount,
+      createdAt: quotation.createdAt,
+      updatedAt: quotation.updatedAt,
+      sentAt: quotation.sentAt,
+      previousQuoteNumber: quotation.previousQuoteNumber,
+    };
+  });
+}
+
+/** The immutable snapshot log of one quotation, newest first. Empty out of scope. */
+export async function listQuotationSnapshots(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+): Promise<QuotationRevisionSnapshot[]> {
+  const quotation = await findQuotationById(db, quotationId, actor);
+  if (!quotation) return [];
+
+  const { rows } = await db.query<{
+    id: string;
+    quotation_id: string;
+    version: number;
+    status: QuotationStatus;
+    subtotal: string;
+    discount_amount: string;
+    tax_amount: string;
+    total_amount: string;
+    notes: string | null;
+    terms_conditions: string | null;
+    valid_until: Date | null;
+    changed_by: string;
+    changed_by_name: string | null;
+    changed_at: Date;
+    change_reason: string | null;
+  }>(
+    `SELECT r.id, r.quotation_id, r.version, r.status, r.subtotal,
+            r.discount_amount, r.tax_amount, r.total_amount, r.notes,
+            r.terms_conditions, r.valid_until, r.changed_by,
+            u.display_name AS changed_by_name, r.changed_at, r.change_reason
+       FROM crm_quotation_revision r
+       LEFT JOIN crm_user u ON u.id = r.changed_by
+      WHERE r.quotation_id = $1
+      ORDER BY r.version DESC`,
+    [quotationId],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    quotationId: row.quotation_id,
+    version: row.version,
+    status: row.status,
+    subtotal: Number(row.subtotal),
+    discountAmount: Number(row.discount_amount),
+    taxAmount: Number(row.tax_amount),
+    totalAmount: Number(row.total_amount),
+    notes: row.notes,
+    termsConditions: row.terms_conditions,
+    validUntil: row.valid_until,
+    changedBy: row.changed_by,
+    changedByName: row.changed_by_name,
+    changedAt: row.changed_at,
+    changeReason: row.change_reason,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Writes
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a new DRAFT quotation for an open opportunity.
+ *
+ * The number comes from the sequence inside the same transaction as the row,
+ * so two concurrent creations can never observe the same number; the UNIQUE
+ * constraint is the final arbiter. Items, the quotation row, the opening
+ * revision snapshot and the activity event land together.
+ */
+export async function createQuotation(
+  db: Db,
+  actor: Actor,
+  input: {
+    opportunityId: string;
+    items: QuotationItemInput[];
+    discountAmount?: number;
+    taxAmount?: number;
+    notes?: string | null;
+    termsConditions?: string | null;
+    validUntil?: Date | null;
+  },
+): Promise<QuotationDetail> {
+  if (input.items.length === 0) {
+    throw new InvalidQuotationItemsError('At least one line item is required.');
+  }
+
+  const transaction = await beginTransaction(db);
+  const client = transaction.client;
+  try {
+    const opportunity = await findOpportunityById(client, input.opportunityId, actor);
+    if (!opportunity) throw new QuotationNotFoundError(input.opportunityId);
+    if (opportunity.stage === 'WON' || opportunity.stage === 'LOST') {
+      throw new ClosedOpportunityError();
+    }
+
+    const quoteNumber = await nextQuoteNumber(client);
+    const discount = input.discountAmount ?? 0;
+    const tax = input.taxAmount ?? 0;
+    const subtotal = await sumItemTotals(client, input.items);
+    if (discount > subtotal) {
+      throw new InvalidQuotationAmountsError('Discount cannot exceed the subtotal.');
+    }
+
+    const { rows } = await client.query<QuotationRow>(
+      `INSERT INTO crm_quotation
+         (opportunity_id, contact_id, account_id, quote_number, version, status, currency,
+          subtotal, discount_amount, tax_amount, total_amount, notes, terms_conditions,
+          valid_until, created_by, previous_quote_id)
+       VALUES ($1, $2, $3, $4, 1, 'DRAFT', 'EGP', $5, $6, $7, $8, $9, $10, $11, $12, NULL)
+       RETURNING ${QUOTATION_COLUMNS}`,
+      [
+        opportunity.id,
+        opportunity.contactId,
+        opportunity.accountId,
+        quoteNumber,
+        money(subtotal),
+        money(discount),
+        money(tax),
+        money(subtotal - discount + tax),
+        input.notes?.trim() || null,
+        input.termsConditions?.trim() || null,
+        input.validUntil ?? null,
+        actor.userId,
+      ],
+    );
+    const quotation = toQuotation(rows[0]);
+
+    await insertItemRows(client, quotation.id, input.items);
+
+    await snapshotQuotation(client, quotation, actor.userId, 'Quotation created');
+
+    await recordOpportunityActivity(client, {
+      opportunityId: opportunity.id,
+      activityType: 'QUOTATION_CREATED',
+      description: `Quotation ${quoteNumber} created`,
+      metadata: { quotationId: quotation.id, quoteNumber, totalAmount: quotation.totalAmount },
+      actorUserId: actor.userId,
+    });
+
+    await commitTransaction(client);
+    const detail = await findQuotationDetailById(db, quotation.id, actor);
+    return detail!;
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    transaction.release();
+  }
+}
+
+/**
+ * Edits a DRAFT in place. Every snapshot in the log is a full state the
+ * document was in, so consecutive snapshots show exactly what each edit
+ * changed and the pre-edit content is never lost.
+ */
+export async function updateDraftQuotation(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+  input: QuotationCommercialInput & { changeReason?: string | null },
+): Promise<QuotationDetail> {
+  if (input.items.length === 0) {
+    throw new InvalidQuotationItemsError('At least one line item is required.');
+  }
+
+  const transaction = await beginTransaction(db);
+  const client = transaction.client;
+  try {
+    const current = await lockQuotationRow(client, quotationId, actor);
+    if (current.status !== 'DRAFT') throw new QuotationNotDraftError(current.status);
+
+    const discount = input.discountAmount ?? 0;
+    const tax = input.taxAmount ?? 0;
+    const subtotal = await sumItemTotals(client, input.items);
+    if (discount > subtotal) {
+      throw new InvalidQuotationAmountsError('Discount cannot exceed the subtotal.');
+    }
+
+    await client.query(`DELETE FROM crm_quotation_item WHERE quotation_id = $1`, [quotationId]);
+    await insertItemRows(client, quotationId, input.items);
+
+    const { rows } = await client.query<QuotationRow>(
+      `UPDATE crm_quotation
+          SET subtotal = $2, discount_amount = $3, tax_amount = $4,
+              total_amount = $2::numeric - $3::numeric + $4::numeric,
+              notes = $5, terms_conditions = $6, valid_until = $7, updated_at = now()
+        WHERE id = $1
+        RETURNING ${QUOTATION_COLUMNS}`,
+      [
+        quotationId,
+        money(subtotal),
+        money(discount),
+        money(tax),
+        input.notes?.trim() || null,
+        input.termsConditions?.trim() || null,
+        input.validUntil ?? null,
+      ],
+    );
+    const updated = toQuotation(rows[0]);
+
+    await snapshotQuotation(
+      client,
+      updated,
+      actor.userId,
+      input.changeReason?.trim() || 'Draft updated',
+    );
+
+    await commitTransaction(client);
+    const detail = await findQuotationDetailById(db, quotationId, actor);
+    return detail!;
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    transaction.release();
+  }
+}
+
+/**
+ * Moves a quotation along the legal status graph, stamping exactly the
+ * timestamp its new status requires. The status write, the snapshot and the
+ * activity event land in one transaction under a row lock, so two concurrent
+ * decisions cannot both win - the second re-reads the row and fails the
+ * transition check.
+ */
+export async function transitionQuotation(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+  to: QuotationStatus,
+): Promise<QuotationDetail> {
+  if (!isQuotationStatus(to)) throw new InvalidQuotationTransitionError('DRAFT', to);
+
+  const transaction = await beginTransaction(db);
+  const client = transaction.client;
+  try {
+    const current = await lockQuotationRow(client, quotationId, actor);
+    if (!canTransition(current.status, to)) {
+      throw new InvalidQuotationTransitionError(current.status, to);
+    }
+    // A DRAFT is never a legal target, so every remaining branch has an event.
+    if (to === 'DRAFT') throw new InvalidQuotationTransitionError(current.status, to);
+
+    const { rows } = await client.query<QuotationRow>(
+      `UPDATE crm_quotation
+          SET status = $2,
+              sent_at = CASE WHEN $2 = 'SENT'::crm_quotation_status THEN now() ELSE sent_at END,
+              accepted_at = CASE WHEN $2 = 'ACCEPTED'::crm_quotation_status THEN now() ELSE accepted_at END,
+              rejected_at = CASE WHEN $2 = 'REJECTED'::crm_quotation_status THEN now() ELSE rejected_at END,
+              expired_at = CASE WHEN $2 = 'EXPIRED'::crm_quotation_status THEN now() ELSE expired_at END,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING ${QUOTATION_COLUMNS}`,
+      [quotationId, to],
+    );
+    const updated = toQuotation(rows[0]);
+
+    await snapshotQuotation(client, updated, actor.userId, `Status moved to ${to}`);
+
+    const activityType = {
+      SENT: 'QUOTATION_SENT',
+      ACCEPTED: 'QUOTATION_ACCEPTED',
+      REJECTED: 'QUOTATION_REJECTED',
+      EXPIRED: 'QUOTATION_EXPIRED',
+    }[to] as 'QUOTATION_SENT' | 'QUOTATION_ACCEPTED' | 'QUOTATION_REJECTED' | 'QUOTATION_EXPIRED';
+
+    await recordOpportunityActivity(client, {
+      opportunityId: updated.opportunityId,
+      activityType,
+      description: `Quotation ${updated.quoteNumber} ${to.toLowerCase()}`,
+      metadata: {
+        quotationId: updated.id,
+        quoteNumber: updated.quoteNumber,
+        fromStatus: current.status,
+        toStatus: to,
+        totalAmount: updated.totalAmount,
+      },
+      actorUserId: actor.userId,
+    });
+
+    await commitTransaction(client);
+    const detail = await findQuotationDetailById(db, quotationId, actor);
+    return detail!;
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    transaction.release();
+  }
+}
+
+/**
+ * Supersedes a committed quotation with a new DRAFT: version + 1, a new quote
+ * number, chained through previous_quote_id. The original row is untouched -
+ * the sent/accepted/rejected commercial truth stays exactly as it was.
+ */
+export async function createRevision(
+  db: Db,
+  quotationId: string,
+  actor: Actor,
+): Promise<QuotationDetail> {
+  const transaction = await beginTransaction(db);
+  const client = transaction.client;
+  try {
+    const parent = await lockQuotationRow(client, quotationId, actor);
+    if (!isRevisionAllowed(parent.status)) {
+      throw new QuotationRevisionNotAllowedError(parent.status);
+    }
+
+    const quoteNumber = await nextQuoteNumber(client);
+    const version = parent.version + 1;
+
+    const { rows } = await client.query<QuotationRow>(
+      `INSERT INTO crm_quotation
+         (opportunity_id, contact_id, account_id, quote_number, version, status, currency,
+          subtotal, discount_amount, tax_amount, total_amount, notes, terms_conditions,
+          valid_until, created_by, previous_quote_id)
+       VALUES ($1, $2, $3, $4, $5, 'DRAFT', 'EGP', $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       RETURNING ${QUOTATION_COLUMNS}`,
+      [
+        parent.opportunityId,
+        parent.contactId,
+        parent.accountId,
+        quoteNumber,
+        version,
+        money(parent.subtotal),
+        money(parent.discountAmount),
+        money(parent.taxAmount),
+        money(parent.totalAmount),
+        parent.notes,
+        parent.termsConditions,
+        parent.validUntil,
+        actor.userId,
+        parent.id,
+      ],
+    );
+    const revision = toQuotation(rows[0]);
+
+    await client.query(
+      `INSERT INTO crm_quotation_item (quotation_id, sequence, description, quantity, unit_price, line_total)
+       SELECT $1, sequence, description, quantity, unit_price, line_total
+         FROM crm_quotation_item
+        WHERE quotation_id = $2`,
+      [revision.id, parent.id],
+    );
+
+    await snapshotQuotation(
+      client,
+      revision,
+      actor.userId,
+      `Revision of ${parent.quoteNumber}`,
+    );
+
+    await recordOpportunityActivity(client, {
+      opportunityId: parent.opportunityId,
+      activityType: 'QUOTATION_REVISED',
+      description: `Quotation ${parent.quoteNumber} revised as ${quoteNumber}`,
+      metadata: {
+        quotationId: revision.id,
+        quoteNumber,
+        previousQuotationId: parent.id,
+        previousQuoteNumber: parent.quoteNumber,
+        version,
+      },
+      actorUserId: actor.userId,
+    });
+
+    await commitTransaction(client);
+    const detail = await findQuotationDetailById(db, revision.id, actor);
+    return detail!;
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    transaction.release();
+  }
+}
+
+/**
+ * The row under an UPDATE lock, within the actor's scope. Used by every write:
+ * an out-of-scope id raises the same not-found error as a missing one.
+ */
+async function lockQuotationRow(db: Db, quotationId: string, actor: Actor): Promise<Quotation> {
+  const clauses = ['q.id = $1'];
+  const params: (string | number | Date | null)[] = [quotationId];
+  pushScope(clauses, params, actor);
+
+  const { rows } = await db.query<QuotationRow & { previous_quote_number: string | null }>(
+    `SELECT ${QUOTATION_COLUMNS_Q}, prev.quote_number AS previous_quote_number
+       FROM crm_quotation q
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+       LEFT JOIN crm_quotation prev ON prev.id = q.previous_quote_id
+      WHERE ${clauses.join(' AND ')}
+      FOR UPDATE OF q`,
+    params,
+  );
+
+  if (!rows[0]) throw new QuotationNotFoundError(quotationId);
+  return toQuotation(rows[0]);
+}

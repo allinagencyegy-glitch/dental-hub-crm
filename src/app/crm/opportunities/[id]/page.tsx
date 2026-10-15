@@ -8,7 +8,8 @@ import {
   getOpportunityStageHistoryAction,
   getOpportunityActivityAction,
 } from '@/server/crm/opportunities/actions';
-import { allowedTransitions } from '@/server/crm/opportunities/stage';
+import { listQuotationsAction } from '@/server/crm/quotations/actions';
+import { allowedTransitions, isTerminalStage } from '@/server/crm/opportunities/stage';
 import { OpportunityDetail } from './OpportunityDetail';
 
 export const metadata = { title: 'Opportunity | Dental Hub CRM' };
@@ -27,12 +28,13 @@ async function getOpportunityData(id: string) {
 
   const canAssignOwner = session.role === 'ADMIN' || session.role === 'SALES_MANAGER';
 
-  const [followUps, lostReasons, owners, stageHistory, activity] = await Promise.all([
+  const [followUps, lostReasons, owners, stageHistory, activity, quotations] = await Promise.all([
     listOpportunityFollowUpsAction(id),
     getLostReasonsAction(),
     canAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
     getOpportunityStageHistoryAction(id),
     getOpportunityActivityAction(id),
+    listQuotationsAction(id),
   ]);
 
   return {
@@ -42,10 +44,12 @@ async function getOpportunityData(id: string) {
     owners,
     stageHistory,
     activity,
+    quotations,
     canAssignOwner,
     userRole: session.role,
     userId: session.user.id,
     allowedStages: allowedTransitions(opportunity.stage),
+    canCreateQuotation: !isTerminalStage(opportunity.stage),
     // One timestamp for the whole render, so every overdue flag agrees.
     now: Date.now(),
   };

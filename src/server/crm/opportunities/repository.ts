@@ -636,7 +636,13 @@ export type OpportunityActivityType =
   | 'FOLLOW_UP_COMPLETED'
   | 'FOLLOW_UP_RESCHEDULED'
   | 'NOTE_ADDED'
-  | 'OWNER_CHANGED';
+  | 'OWNER_CHANGED'
+  | 'QUOTATION_CREATED'
+  | 'QUOTATION_REVISED'
+  | 'QUOTATION_SENT'
+  | 'QUOTATION_ACCEPTED'
+  | 'QUOTATION_REJECTED'
+  | 'QUOTATION_EXPIRED';
 
 export interface OpportunityActivityEntry {
   id: string;

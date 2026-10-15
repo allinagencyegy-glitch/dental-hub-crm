@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS, can, permissionsFor } from '../../src/server/authz/permissions';
 
-describe('Slice 2A/2B permissions', () => {
-  it('defines exactly the foundation plus Slice 1, Slice 2A and Slice 2B vocabulary', () => {
+describe('Slice 2A/2B and Quotations V1 permissions', () => {
+  it('defines exactly the foundation plus Slice 1, Slice 2A, Slice 2B and Quotations vocabulary', () => {
     expect([...PERMISSIONS].sort()).toEqual(
       [
         'crm:access',
@@ -21,6 +21,9 @@ describe('Slice 2A/2B permissions', () => {
         'opportunities:close',
         'followups:read',
         'followups:write',
+        'quotations:read',
+        'quotations:write',
+        'quotations:close',
       ].sort(),
     );
   });
@@ -46,6 +49,9 @@ describe('Slice 2A/2B permissions', () => {
     expect(can('SALES_MANAGER', 'opportunities:close')).toBe(true);
     expect(can('SALES_MANAGER', 'followups:read')).toBe(true);
     expect(can('SALES_MANAGER', 'followups:write')).toBe(true);
+    expect(can('SALES_MANAGER', 'quotations:read')).toBe(true);
+    expect(can('SALES_MANAGER', 'quotations:write')).toBe(true);
+    expect(can('SALES_MANAGER', 'quotations:close')).toBe(true);
 
     expect(can('SALES_MANAGER', 'users:read')).toBe(false);
     expect(can('SALES_MANAGER', 'users:manage')).toBe(false);
@@ -67,6 +73,9 @@ describe('Slice 2A/2B permissions', () => {
     expect(can('SALES_REP', 'opportunities:close')).toBe(true);
     expect(can('SALES_REP', 'followups:read')).toBe(true);
     expect(can('SALES_REP', 'followups:write')).toBe(true);
+    expect(can('SALES_REP', 'quotations:read')).toBe(true);
+    expect(can('SALES_REP', 'quotations:write')).toBe(true);
+    expect(can('SALES_REP', 'quotations:close')).toBe(true);
 
     // No destructive merge, no catalog management, no user administration.
     expect(can('SALES_REP', 'contacts:merge')).toBe(false);
@@ -87,7 +96,7 @@ describe('Slice 2A/2B permissions', () => {
   });
 
   it('encodes no permissions for deferred CRM slices', () => {
-    const deferred = ['pipeline', 'opportunity', 'quotation', 'task', 'activity', 'won', 'lost'];
+    const deferred = ['pipeline', 'task', 'activity', 'won', 'lost'];
     for (const permission of PERMISSIONS) {
       for (const term of deferred) {
         expect(permission.toLowerCase()).not.toContain(term);
