@@ -11,6 +11,7 @@ import {
   archiveLead,
   restoreLead,
   updateLead,
+  updateLeadAccount,
   resolveOrCreateContact,
   resolvePrimaryAccount,
   IdentityConflictError,
@@ -21,6 +22,11 @@ import {
   type LeadDetail,
   type LeadStatus,
 } from './repository';
+import {
+  createAccount,
+  linkContactToAccount,
+} from '@/server/crm/accounts/repository';
+import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
 import { findSourceByCode, listSourceCampaigns, findProductCategoryByCode, listProductCategories, listSources } from '@/server/crm/catalog/repository';
 import { findUserById, listUsers } from '@/server/users/repository';
 
@@ -152,7 +158,7 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
   }
 }
 
-export async function listLeadsUseCase(actor: Actor, options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; limit?: number; offset?: number } = {}, db?: Db): Promise<{ leads: Lead[]; total: number }> {
+export async function listLeadsUseCase(actor: Actor, options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}, db?: Db): Promise<{ leads: Lead[]; total: number }> {
   const database = getDb(db);
   return listLeads(database, { userId: actor.userId, role: actor.role }, options);
 }
@@ -366,5 +372,102 @@ export async function updateLeadUseCase(actor: Actor, leadId: string, input: Upd
       }
     }
     throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account / clinic workflow
+// ---------------------------------------------------------------------------
+
+export type LinkLeadAccountResult =
+  | { ok: true; account: { id: string; name: string } }
+  | { ok: false; error: 'VALIDATION' | 'NOT_FOUND' | 'ACCOUNT_NOT_FOUND'; message: string };
+
+/**
+ * Links a lead's contact to an account/clinic and points the lead at it.
+ *
+ * Two modes:
+ *   - accountId provided: reuse an existing clinic.
+ *   - newAccountName provided: create the clinic, then link to it.
+ *
+ * The contact <-> account link is many-to-many by design (crm_account_contact),
+ * so a contact may be linked to several clinics; the lead's own account_id is
+ * the "primary clinic for this inquiry" and is updated to the chosen one.
+ * Re-linking an already-linked pair is not an error - it is a no-op for the
+ * link and still updates the lead reference. Everything lands in one
+ * transaction.
+ */
+export async function linkLeadToAccountUseCase(
+  actor: Actor,
+  leadId: string,
+  input: { accountId?: string | null; newAccountName?: string | null },
+  db?: Db,
+): Promise<LinkLeadAccountResult> {
+  const database = getDb(db);
+
+  const newAccountName = input.newAccountName?.trim();
+  if (!input.accountId && !newAccountName) {
+    return { ok: false, error: 'VALIDATION', message: 'Choose an existing clinic or name a new one.' };
+  }
+
+  const lead = await findLeadById(database, leadId, { userId: actor.userId, role: actor.role });
+  if (!lead) {
+    return { ok: false, error: 'NOT_FOUND', message: 'Lead not found.' };
+  }
+
+  const transaction = await beginTransaction(database);
+  const client = transaction.client;
+  try {
+    let accountId: string;
+    let accountName: string;
+
+    if (input.accountId) {
+      const existing = await client.query<{ id: string; name: string; is_active: boolean }>(
+        `SELECT id, name, is_active FROM crm_account WHERE id = $1`,
+        [input.accountId],
+      );
+      const row = existing.rows[0];
+      if (!row || !row.is_active) {
+        await rollbackTransaction(client);
+        return { ok: false, error: 'ACCOUNT_NOT_FOUND', message: 'Clinic not found or inactive.' };
+      }
+      accountId = row.id;
+      accountName = row.name;
+    } else {
+      if (newAccountName!.length > 200) {
+        await rollbackTransaction(client);
+        return { ok: false, error: 'VALIDATION', message: 'Clinic name must be 200 characters or fewer.' };
+      }
+      const created = await createAccount(client, { name: newAccountName! });
+      accountId = created.id;
+      accountName = created.name;
+    }
+
+    // The contact <-> account pair is UNIQUE. A failed INSERT would abort the
+    // surrounding transaction even if the error is caught, so check first and
+    // only insert a link that does not exist yet.
+    const { rows: linkRows } = await client.query<{ id: string }>(
+      `SELECT id FROM crm_account_contact WHERE account_id = $1 AND contact_id = $2`,
+      [accountId, lead.contactId],
+    );
+    if (linkRows.length === 0) {
+      await linkContactToAccount(client, { accountId, contactId: lead.contactId });
+    }
+
+    await updateLeadAccount(client, leadId, { userId: actor.userId, role: actor.role }, accountId);
+
+    await commitTransaction(client);
+    return { ok: true, account: { id: accountId, name: accountName } };
+  } catch (error) {
+    await rollbackTransaction(client);
+    if (error instanceof LeadNotFoundError) {
+      return { ok: false, error: 'NOT_FOUND', message: error.message };
+    }
+    if (error instanceof Error && error.message === 'ACCOUNT_NOT_FOUND') {
+      return { ok: false, error: 'ACCOUNT_NOT_FOUND', message: 'Clinic not found.' };
+    }
+    throw error;
+  } finally {
+    transaction.release();
   }
 }

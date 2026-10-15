@@ -37,6 +37,8 @@ describe('migrations', () => {
       { version: 3, name: 'crm_identity' },
       { version: 4, name: 'crm_leads' },
       { version: 5, name: 'crm_lead_archiving' },
+      { version: 6, name: 'crm_opportunities_followups' },
+      { version: 7, name: 'crm_quotations' },
     ]);
     expect(outcome.skipped).toEqual([]);
 
@@ -49,10 +51,17 @@ describe('migrations', () => {
       'crm_account_contact',
       'crm_contact',
       'crm_contact_channel',
+      'crm_followup',
       'crm_lead',
+      'crm_opportunity',
+      'crm_opportunity_activity',
+      'crm_opportunity_stage_history',
       'crm_outcome_reason',
       'crm_product',
       'crm_product_category',
+      'crm_quotation',
+      'crm_quotation_item',
+      'crm_quotation_revision',
       'crm_schema_migration',
       'crm_session',
       'crm_source',
@@ -71,12 +80,14 @@ describe('migrations', () => {
       { version: 3, name: 'crm_identity' },
       { version: 4, name: 'crm_leads' },
       { version: 5, name: 'crm_lead_archiving' },
+      { version: 6, name: 'crm_opportunities_followups' },
+      { version: 7, name: 'crm_quotations' },
     ]);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('5');
+    expect(rows[0].count).toBe('7');
   });
 
   it('records a checksum for every applied migration', async () => {
@@ -144,11 +155,13 @@ describe('migrations', () => {
     );
     const names = rows.map((row) => row.table_name);
 
-    // Leads (crm_lead) is now implemented in Slice 2A. Opportunities, follow-ups and activities belong to later slices.
-    for (const deferred of ['crm_opportunity', 'crm_follow_up', 'crm_activity']) {
+    // Leads landed in Slice 2A; opportunities, their stage history and
+    // follow-ups landed in Slice 2B. Activities are still deferred.
+    for (const deferred of ['crm_activity']) {
       expect(names).not.toContain(deferred);
     }
-    for (const deferred of ['customer', 'pipeline', 'task', 'quotation', 'report']) {
+    // Quotations, dashboards and after-sales remain out of scope.
+    for (const deferred of ['customer', 'pipeline', 'task', 'report']) {
       expect(names.some((name) => name.includes(deferred))).toBe(false);
     }
   });

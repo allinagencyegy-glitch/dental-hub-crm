@@ -24,7 +24,7 @@ describe('crm migrations', () => {
     await dropDisposableDatabase(database);
   });
 
-  it('applies foundation, Slice 1 and Slice 2A migrations cleanly to a fresh database', async () => {
+  it('applies foundation, Slice 1, Slice 2A and Slice 2B migrations cleanly to a fresh database', async () => {
     const outcome = await runMigrations(client);
 
     expect(outcome.applied).toEqual([
@@ -33,6 +33,8 @@ describe('crm migrations', () => {
       { version: 3, name: 'crm_identity' },
       { version: 4, name: 'crm_leads' },
       { version: 5, name: 'crm_lead_archiving' },
+      { version: 6, name: 'crm_opportunities_followups' },
+      { version: 7, name: 'crm_quotations' },
     ]);
     expect(outcome.skipped).toEqual([]);
   });
@@ -41,12 +43,12 @@ describe('crm migrations', () => {
     const outcome = await runMigrations(client);
 
     expect(outcome.applied).toEqual([]);
-    expect(outcome.skipped).toHaveLength(5);
+    expect(outcome.skipped).toHaveLength(7);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('5');
+    expect(rows[0].count).toBe('7');
   });
 
   it('seeds stable catalog reference data on fresh apply', async () => {

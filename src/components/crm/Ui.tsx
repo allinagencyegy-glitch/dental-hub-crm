@@ -23,7 +23,7 @@ export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md'
   return <span aria-hidden="true" className={`grid shrink-0 place-items-center rounded-full bg-[#dff4f1] font-bold text-[#087c71] ring-1 ring-[#bce6df] ${sizes[size]}`}>{initials}</span>;
 }
 
-export function PageHeader({ eyebrow, title, description, actionLabel, actionIcon = 'plus' }: { eyebrow?: string; title: string; description: string; actionLabel?: string; actionIcon?: CrmIconName }) {
+export function PageHeader({ eyebrow, title, description, actionLabel, actionIcon = 'plus', actionHref }: { eyebrow?: string; title: string; description: string; actionLabel?: string; actionIcon?: CrmIconName; actionHref?: string }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
@@ -31,7 +31,12 @@ export function PageHeader({ eyebrow, title, description, actionLabel, actionIco
         <h1 className="text-[26px] font-semibold tracking-[-0.035em] text-[#16232c]">{title}</h1>
         <p className="mt-1 text-[12px] text-[#75828c]">{description}</p>
       </div>
-      {actionLabel ? <button type="button" title="Preview only — changes are not saved" className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#132932] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1b3944]"><CrmIcon name={actionIcon} className="h-4 w-4" />{actionLabel}</button> : null}
+      {actionLabel && actionHref ? (
+        <Link href={actionHref} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#132932] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1b3944]">
+          <CrmIcon name={actionIcon} className="h-4 w-4" />
+          {actionLabel}
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -59,15 +64,36 @@ export function SectionTitle({ title, subtitle, href, linkLabel = 'View all' }: 
   );
 }
 
-export function Toolbar({ placeholder, children }: { placeholder: string; children?: React.ReactNode }) {
+/**
+ * List toolbar with a wired search input.
+ *
+ * The search box only renders when `onSearchChange` is provided: a toolbar
+ * without a functional search simply does not show one. The unsupported
+ * "More filters" control has been removed - filters live in the pages that
+ * actually implement them.
+ */
+export function Toolbar({ placeholder, children, searchValue = '', onSearchChange, onSearchSubmit }: { placeholder?: string; children?: React.ReactNode; searchValue?: string; onSearchChange?: (value: string) => void; onSearchSubmit?: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5 rounded-t-xl border border-[#dfe5e8] bg-white p-3.5">
-      <div className="relative min-w-[260px] flex-1 sm:max-w-[390px]">
-        <CrmIcon name="search" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e99a1]" />
-        <input aria-label={placeholder} placeholder={placeholder} className="h-9 w-full rounded-lg border border-[#dfe4e7] bg-[#f8fafb] pl-9 pr-3 text-[11px] outline-none focus:border-[#19ad9d] focus:bg-white" />
-      </div>
+      {placeholder && onSearchChange ? (
+        <form
+          className="relative min-w-[260px] flex-1 sm:max-w-[390px]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearchSubmit?.();
+          }}
+        >
+          <CrmIcon name="search" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e99a1]" />
+          <input
+            aria-label={placeholder}
+            placeholder={placeholder}
+            value={searchValue}
+            onChange={(event) => onSearchChange(event.target.value)}
+            className="h-9 w-full rounded-lg border border-[#dfe4e7] bg-[#f8fafb] pl-9 pr-3 text-[11px] outline-none focus:border-[#19ad9d] focus:bg-white"
+          />
+        </form>
+      ) : null}
       {children}
-      <button type="button" title="Preview filter" className="ml-auto inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"><CrmIcon name="filter" className="h-3.5 w-3.5" />More filters</button>
     </div>
   );
 }

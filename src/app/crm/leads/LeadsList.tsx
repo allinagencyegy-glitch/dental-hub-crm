@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Avatar, Badge, PageHeader, Toolbar } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
@@ -14,6 +15,7 @@ interface LeadsListProps {
   limit: number;
   status?: LeadStatus;
   archiveFilter?: 'active' | 'archived' | 'all';
+  search?: string;
 }
 
 const STATUS_FILTERS: { value: LeadStatus | 'ALL'; label: string }[] = [
@@ -29,9 +31,28 @@ const ARCHIVE_FILTERS: { value: 'active' | 'archived' | 'all'; label: string }[]
   { value: 'all', label: 'All' },
 ];
 
-export function LeadsList({ leads, total, page, limit, status, archiveFilter = 'active' }: LeadsListProps) {
+export function LeadsList({ leads, total, page, limit, status, archiveFilter = 'active', search = '' }: LeadsListProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  const [searchInput, setSearchInput] = useState(search);
+
+  const handleSearchSubmit = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    const trimmed = searchInput.trim();
+    if (trimmed) params.set('q', trimmed);
+    else params.delete('q');
+    params.delete('page');
+    router.push(`/crm/leads?${params.toString()}`);
+  };
+
+  const handleSearchClear = () => {
+    setSearchInput('');
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('q');
+    params.delete('page');
+    router.push(`/crm/leads?${params.toString()}`);
+  };
 
   const handleStatusChange = (newStatus: LeadStatus | 'ALL') => {
     const params = new URLSearchParams(searchParams.toString());
@@ -81,6 +102,7 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
         description="Qualify incoming interest and keep every first response on track."
         actionLabel="Capture lead"
         actionIcon="plus"
+        actionHref="/crm/leads/capture"
       />
       <div className="flex items-center gap-1 border-b border-[#dce3e6]">
         {ARCHIVE_FILTERS.map((filter) => (
@@ -139,7 +161,22 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
         ))}
       </div>
       <div className="mt-4 overflow-hidden rounded-xl shadow-[0_1px_2px_rgba(20,35,45,.04)] ring-1 ring-[#dfe5e8] bg-white">
-        <Toolbar placeholder="Search by contact, account, source or reference...">
+        <Toolbar
+          placeholder="Search by contact, account, source or reference..."
+          searchValue={searchInput}
+          onSearchChange={setSearchInput}
+          onSearchSubmit={handleSearchSubmit}
+        >
+          {search ? (
+            <button
+              type="button"
+              onClick={handleSearchClear}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+            >
+              <CrmIcon name="x" className="h-3.5 w-3.5" />
+              Clear search
+            </button>
+          ) : null}
           <Link
             href="/crm/leads/capture"
             className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:border-[#18b6a4] hover:bg-[#f7f9fa]"
@@ -174,7 +211,20 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
               {leads.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-[#89949c]">
-                    No leads found.
+                    {search ? (
+                      <span>
+                        No leads match “{search}”.
+                        <button
+                          type="button"
+                          onClick={handleSearchClear}
+                          className="ml-2 font-semibold text-[#118e82] hover:underline"
+                        >
+                          Clear search
+                        </button>
+                      </span>
+                    ) : (
+                      'No leads found.'
+                    )}
                   </td>
                 </tr>
               ) : (

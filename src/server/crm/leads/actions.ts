@@ -16,11 +16,13 @@ import {
   archiveLeadUseCase,
   restoreLeadUseCase,
   updateLeadUseCase,
+  linkLeadToAccountUseCase,
   type CaptureLeadInput,
   type CaptureLeadResult,
   type Actor,
   type UpdateLeadInput,
   type UpdateLeadResult,
+  type LinkLeadAccountResult,
 } from './service';
 import {
   LeadNotFoundError,
@@ -64,8 +66,10 @@ export async function captureLeadAction(input: CaptureLeadInput): Promise<Captur
 
 /**
  * Lists leads for the current actor with row-scope authorization.
+ * `search` matches contact name, phone, email, account, source, campaign,
+ * category, owner and the lead reference.
  */
-export async function listLeadsAction(options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
+export async function listLeadsAction(options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
   const session = await assertPermission('leads:read');
   const actor: Actor = { userId: session.user.id, role: session.role };
   return listLeadsUseCase(actor, options);
@@ -199,4 +203,18 @@ export async function updateLeadAction(leadId: string, input: UpdateLeadInput): 
   const actor: Actor = { userId: session.user.id, role: session.role };
 
   return updateLeadUseCase(actor, leadId, input);
+}
+
+/**
+ * Links a lead's contact to an existing clinic/account, or creates a new
+ * clinic and links it. Row scope: a rep may only do this on their own leads.
+ */
+export async function linkLeadToAccountAction(
+  leadId: string,
+  input: { accountId?: string | null; newAccountName?: string | null },
+): Promise<LinkLeadAccountResult> {
+  const session = await assertPermission('leads:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  return linkLeadToAccountUseCase(actor, leadId, input);
 }

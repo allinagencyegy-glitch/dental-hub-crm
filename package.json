@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed:acceptance": "tsx scripts/seed-acceptance.ts",
     "test:foundation": "next build && vitest run",
     "test:crm": "vitest run --config vitest.crm.mts"
   },

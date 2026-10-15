@@ -7,6 +7,7 @@
  * relationship twice unrepresentable.
  */
 import type { Db } from '@/server/db/types';
+import { likePattern } from '@/server/db/like';
 
 export class DuplicateAccountContactError extends Error {
   constructor() {
@@ -65,6 +66,32 @@ export async function findAccountById(db: Db, id: string): Promise<Account | nul
     [id],
   );
   return rows[0] ? toAccount(rows[0]) : null;
+}
+
+/** Active accounts, newest first, optionally narrowed by a literal name search. */
+export async function listAccounts(
+  db: Db,
+  options: { search?: string; limit?: number } = {},
+): Promise<Account[]> {
+  const { search, limit = 100 } = options;
+
+  const clauses: string[] = ['is_active = true'];
+  const params: (string | number)[] = [];
+
+  if (search !== undefined && search.trim() !== '') {
+    params.push(likePattern(search.trim()));
+    clauses.push(`name ILIKE $${params.length} ESCAPE '\\'`);
+  }
+
+  params.push(limit);
+  const { rows } = await db.query<AccountRow>(
+    `SELECT ${ACCOUNT_COLUMNS} FROM crm_account
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY created_at DESC, name ASC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return rows.map(toAccount);
 }
 
 export interface AccountContact {

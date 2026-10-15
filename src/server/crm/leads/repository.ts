@@ -20,6 +20,7 @@
  */
 import type { Db } from '@/server/db/types';
 import { Pool, PoolClient } from 'pg';
+import { likePattern } from '@/server/db/like';
 import { normaliseEmail } from '@/server/users/repository';
 import { normalisePhoneToE164 } from '@/server/crm/contacts/phone';
 import { createContact, findContactByPhone, DuplicatePhoneError, DuplicateContactEmailError } from '@/server/crm/contacts/repository';
@@ -146,6 +147,19 @@ const LEAD_LIST_COLUMNS = `
   a.name AS account_name,
   pc.name AS product_category_name,
   u.display_name AS owner_display_name
+`;
+
+/**
+ * Joins shared by list and count queries. `sc` (campaign) only exists here so
+ * search can match a campaign by name; no campaign column is selected.
+ */
+const LEAD_LIST_JOINS = `
+  JOIN crm_source s ON s.id = l.source_id
+  JOIN crm_contact c ON c.id = l.contact_id
+  LEFT JOIN crm_account a ON a.id = l.account_id
+  LEFT JOIN crm_product_category pc ON pc.id = l.product_category_id
+  JOIN crm_user u ON u.id = l.owner_user_id
+  LEFT JOIN crm_source_campaign sc ON sc.id = l.campaign_id
 `;
 
 export class IdentityConflictError extends Error {
@@ -386,17 +400,24 @@ export async function findLeadById(
 }
 
 /**
- * Lists leads with row-scope authorization, pagination, and archive filtering.
- * SALES_REP sees only own leads.
- * SALES_MANAGER/ADMIN see all leads.
- * archiveFilter: 'active' (default, archived_at IS NULL), 'archived' (archived_at IS NOT NULL), 'all' (both)
+ * Lists leads with row-scope authorization, pagination, archive filtering and
+ * text search.
+ *
+ * SALES_REP sees only own leads; SALES_MANAGER/ADMIN see all.
+ * archiveFilter: 'active' (default, archived_at IS NULL), 'archived'
+ * (archived_at IS NOT NULL), 'all' (both).
+ *
+ * search matches, case-insensitively, the contact's name, any phone/email
+ * channel, the account/clinic name, source name, campaign name, product
+ * category name, owner display name and the lead reference id. The term is
+ * escaped, so it always matches literally.
  */
 export async function listLeads(
   db: Db,
   actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
-  options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; limit?: number; offset?: number } = {},
+  options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {},
 ): Promise<{ leads: Lead[]; total: number }> {
-  const { status, archiveFilter = 'active', limit = 50, offset = 0 } = options;
+  const { status, archiveFilter = 'active', search, limit = 50, offset = 0 } = options;
 
   let whereClause = '';
   const params: (string | number)[] = [];
@@ -425,10 +446,36 @@ export async function listLeads(
     params.push(status);
   }
 
+  if (search !== undefined && search.trim() !== '') {
+    const pattern = likePattern(search.trim());
+    const placeholder = `$${params.length + 1}`;
+    const clause = `(
+      c.full_name ILIKE ${placeholder} ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1 FROM crm_contact_channel ch
+         WHERE ch.contact_id = c.id AND ch.value ILIKE ${placeholder} ESCAPE '\\'
+      )
+      OR COALESCE(a.name, '') ILIKE ${placeholder} ESCAPE '\\'
+      OR s.name ILIKE ${placeholder} ESCAPE '\\'
+      OR COALESCE(sc.name, '') ILIKE ${placeholder} ESCAPE '\\'
+      OR COALESCE(pc.name, '') ILIKE ${placeholder} ESCAPE '\\'
+      OR u.display_name ILIKE ${placeholder} ESCAPE '\\'
+      OR l.id::text LIKE ${placeholder} ESCAPE '\\'
+    )`;
+    if (whereClause) {
+      whereClause += ` AND ${clause}`;
+    } else {
+      whereClause = `WHERE ${clause}`;
+    }
+    params.push(pattern);
+  }
+
   const countParams = [...params];
-  const countWhereClause = whereClause ? whereClause.replace(/l\./g, '') : whereClause;
   const { rows: countRows } = await db.query<{ count: string }>(
-    `SELECT count(*)::text AS count FROM crm_lead ${countWhereClause}`,
+    `SELECT count(*)::text AS count
+       FROM crm_lead l
+       ${LEAD_LIST_JOINS}
+       ${whereClause}`,
     countParams,
   );
   const total = Number(countRows[0].count);
@@ -437,13 +484,9 @@ export async function listLeads(
   const { rows } = await db.query<LeadRow>(
     `SELECT ${LEAD_LIST_COLUMNS}
        FROM crm_lead l
-       JOIN crm_source s ON s.id = l.source_id
-       JOIN crm_contact c ON c.id = l.contact_id
-       LEFT JOIN crm_account a ON a.id = l.account_id
-       LEFT JOIN crm_product_category pc ON pc.id = l.product_category_id
-       JOIN crm_user u ON u.id = l.owner_user_id
-     ${whereClause}
-     ORDER BY l.received_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+       ${LEAD_LIST_JOINS}
+       ${whereClause}
+       ORDER BY l.received_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
 
@@ -584,12 +627,45 @@ export async function restoreLead(
 
   const { rows } = await db.query<LeadRow>(
     `UPDATE crm_lead
-       SET archived_at = NULL,
-           archived_by_user_id = NULL,
-           updated_at = now()
-     WHERE id = $1
-     RETURNING ${LEAD_RETURNING_COLUMNS}`,
+        SET archived_at = NULL,
+            archived_by_user_id = NULL,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING ${LEAD_RETURNING_COLUMNS}`,
     [leadId],
+  );
+
+  return toLead(rows[0]);
+}
+
+/**
+ * Links a lead to an account/clinic.
+ *
+ * Row-scope authorization: SALES_REP may only change their own leads. The
+ * account must exist. The contact <-> account many-to-many link itself is
+ * owned by the accounts repository; this function only points the lead's
+ * denormalised account reference at the chosen clinic.
+ */
+export async function updateLeadAccount(
+  db: Db,
+  leadId: string,
+  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  accountId: string,
+): Promise<Lead> {
+  const lead = await findLeadById(db, leadId, actor);
+  if (!lead) throw new LeadNotFoundError(leadId);
+
+  const { rows: accountRows } = await db.query<{ id: string }>(
+    `SELECT id FROM crm_account WHERE id = $1`,
+    [accountId],
+  );
+  if (!accountRows[0]) throw new Error('ACCOUNT_NOT_FOUND');
+
+  const { rows } = await db.query<LeadRow>(
+    `UPDATE crm_lead SET account_id = $2, updated_at = now()
+      WHERE id = $1
+      RETURNING ${LEAD_RETURNING_COLUMNS}`,
+    [leadId, accountId],
   );
 
   return toLead(rows[0]);

@@ -280,6 +280,13 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                   ))
                 )}
               </select>
+              {!formData.sourceCode ? (
+                <p className="mt-1 text-[10px] text-slate-500">Choose a source to see its campaigns.</p>
+              ) : loadingCampaigns ? (
+                <p className="mt-1 text-[10px] text-slate-500">Loading campaigns…</p>
+              ) : campaigns.length === 0 ? (
+                <p className="mt-1 text-[10px] text-slate-500">No campaigns for this source.</p>
+              ) : null}
             </div>
             <div>
               <label htmlFor="productCategoryCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-1.5">

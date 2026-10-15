@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PERMISSIONS, can, permissionsFor } from '../../src/server/authz/permissions';
 
-describe('Slice 2A permissions', () => {
-  it('defines exactly the foundation plus Slice 1 and Slice 2A vocabulary', () => {
+describe('Slice 2A/2B permissions', () => {
+  it('defines exactly the foundation plus Slice 1, Slice 2A and Slice 2B vocabulary', () => {
     expect([...PERMISSIONS].sort()).toEqual(
       [
         'crm:access',
@@ -15,6 +15,12 @@ describe('Slice 2A permissions', () => {
         'leads:read',
         'leads:write',
         'leads:disqualify',
+        'opportunities:read',
+        'opportunities:write',
+        'opportunities:advance',
+        'opportunities:close',
+        'followups:read',
+        'followups:write',
       ].sort(),
     );
   });
@@ -34,6 +40,12 @@ describe('Slice 2A permissions', () => {
     expect(can('SALES_MANAGER', 'leads:read')).toBe(true);
     expect(can('SALES_MANAGER', 'leads:write')).toBe(true);
     expect(can('SALES_MANAGER', 'leads:disqualify')).toBe(true);
+    expect(can('SALES_MANAGER', 'opportunities:read')).toBe(true);
+    expect(can('SALES_MANAGER', 'opportunities:write')).toBe(true);
+    expect(can('SALES_MANAGER', 'opportunities:advance')).toBe(true);
+    expect(can('SALES_MANAGER', 'opportunities:close')).toBe(true);
+    expect(can('SALES_MANAGER', 'followups:read')).toBe(true);
+    expect(can('SALES_MANAGER', 'followups:write')).toBe(true);
 
     expect(can('SALES_MANAGER', 'users:read')).toBe(false);
     expect(can('SALES_MANAGER', 'users:manage')).toBe(false);
@@ -46,6 +58,15 @@ describe('Slice 2A permissions', () => {
     expect(can('SALES_REP', 'leads:read')).toBe(true);
     expect(can('SALES_REP', 'leads:write')).toBe(true);
     expect(can('SALES_REP', 'leads:disqualify')).toBe(true);
+
+    // A rep works deals but may not reassign ownership: the capability exists,
+    // and the repository is what refuses a rep's reassignment attempt.
+    expect(can('SALES_REP', 'opportunities:read')).toBe(true);
+    expect(can('SALES_REP', 'opportunities:write')).toBe(true);
+    expect(can('SALES_REP', 'opportunities:advance')).toBe(true);
+    expect(can('SALES_REP', 'opportunities:close')).toBe(true);
+    expect(can('SALES_REP', 'followups:read')).toBe(true);
+    expect(can('SALES_REP', 'followups:write')).toBe(true);
 
     // No destructive merge, no catalog management, no user administration.
     expect(can('SALES_REP', 'contacts:merge')).toBe(false);
