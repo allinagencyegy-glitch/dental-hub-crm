@@ -4,9 +4,10 @@
  * Foundation v0 encoded "can you be in the CRM at all" and "can you administer
  * users". CRM Domain Slice 1 adds contact and catalog capabilities. Slice 2A
  * adds lead capabilities. Slice 2B adds opportunity and follow-up capabilities.
- * Quotations V1 adds quotation capabilities. Reports and after-sales
- * permissions are NOT modelled yet - but new permissions slot into PERMISSIONS
- * and ROLE_PERMISSIONS without touching any call site.
+ * Quotations V1 adds quotation capabilities. Pipeline & Management Dashboard
+ * V1 adds the dashboard capability. Reports and after-sales permissions are
+ * NOT modelled yet - but new permissions slot into PERMISSIONS and
+ * ROLE_PERMISSIONS without touching any call site.
  *
  * Everything here is a CAPABILITY check: does this role have this ability at
  * all. Row scope - WHICH records a user may touch - is a separate concern,
@@ -42,6 +43,7 @@ export const PERMISSIONS = [
   'quotations:read',
   'quotations:write',
   'quotations:close',
+  'dashboard:read',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -66,6 +68,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'quotations:read',
     'quotations:write',
     'quotations:close',
+    'dashboard:read',
   ],
   SALES_MANAGER: [
     'crm:access',
@@ -85,6 +88,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'quotations:read',
     'quotations:write',
     'quotations:close',
+    'dashboard:read',
   ],
   // A rep works contacts but cannot merge them (a destructive, history-altering
   // operation) and cannot manage the catalog. They advance and close their own
@@ -106,6 +110,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'quotations:read',
     'quotations:write',
     'quotations:close',
+    'dashboard:read',
   ],
 };
 

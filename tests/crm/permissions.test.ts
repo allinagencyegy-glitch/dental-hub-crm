@@ -24,6 +24,7 @@ describe('Slice 2A/2B and Quotations V1 permissions', () => {
         'quotations:read',
         'quotations:write',
         'quotations:close',
+        'dashboard:read',
       ].sort(),
     );
   });
@@ -52,6 +53,7 @@ describe('Slice 2A/2B and Quotations V1 permissions', () => {
     expect(can('SALES_MANAGER', 'quotations:read')).toBe(true);
     expect(can('SALES_MANAGER', 'quotations:write')).toBe(true);
     expect(can('SALES_MANAGER', 'quotations:close')).toBe(true);
+    expect(can('SALES_MANAGER', 'dashboard:read')).toBe(true);
 
     expect(can('SALES_MANAGER', 'users:read')).toBe(false);
     expect(can('SALES_MANAGER', 'users:manage')).toBe(false);
@@ -76,6 +78,7 @@ describe('Slice 2A/2B and Quotations V1 permissions', () => {
     expect(can('SALES_REP', 'quotations:read')).toBe(true);
     expect(can('SALES_REP', 'quotations:write')).toBe(true);
     expect(can('SALES_REP', 'quotations:close')).toBe(true);
+    expect(can('SALES_REP', 'dashboard:read')).toBe(true);
 
     // No destructive merge, no catalog management, no user administration.
     expect(can('SALES_REP', 'contacts:merge')).toBe(false);
