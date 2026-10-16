@@ -156,7 +156,7 @@ describe('opportunity activity feed', () => {
     );
     if (!rescheduled.ok) throw new Error('setup failed');
 
-    const completed = await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
+    const completed = await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
     if (!completed.ok) throw new Error('setup failed');
 
     const activity = await getOpportunityActivityUseCase(manager, opportunity.id, client);

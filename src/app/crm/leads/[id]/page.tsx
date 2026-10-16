@@ -1,6 +1,9 @@
 import { requirePermission } from '@/server/auth/dal';
 import { getLeadDetailAction, getDisqualifyReasonsAction } from '@/server/crm/leads/actions';
-import { getOpportunityByLeadAction } from '@/server/crm/opportunities/actions';
+import {
+  getOpportunityByLeadAction,
+  listLeadFollowUpsAction,
+} from '@/server/crm/opportunities/actions';
 import { listAccountsAction } from '@/server/crm/accounts/actions';
 import { LeadDetailPage } from './LeadDetailPage';
 import { notFound } from 'next/navigation';
@@ -30,6 +33,9 @@ async function getLeadData(params: Promise<{ id: string }>) {
   // lead may see the shared clinic list.
   const accounts = await listAccountsAction({ limit: 100 });
 
+  // Promises made on the lead itself, before it is commercial work.
+  const followUps = await listLeadFollowUpsAction(id);
+
   return {
     lead,
     disqualifyReasons,
@@ -38,6 +44,8 @@ async function getLeadData(params: Promise<{ id: string }>) {
     userId: session.user.id,
     opportunityId: opportunity?.id ?? null,
     qualifiedAt: opportunity?.createdAt ?? null,
+    followUps,
+    now: Date.now(),
   };
 }
 

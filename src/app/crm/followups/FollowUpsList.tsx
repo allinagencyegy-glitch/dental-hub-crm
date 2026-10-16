@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Avatar, PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import {
@@ -44,6 +44,10 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Completion captures the outcome; the API refuses an empty note.
+  const [completing, setCompleting] = useState<FollowUpListRow | null>(null);
+  const [completionNote, setCompletionNote] = useState('');
+
   const totalPages = Math.ceil(total / limit);
 
   const pushParams = (mutate: (params: URLSearchParams) => void) => {
@@ -60,15 +64,30 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
     });
   };
 
-  const handleComplete = async (followUpId: string) => {
-    setBusyId(followUpId);
+  const openComplete = (row: FollowUpListRow) => {
+    setCompleting(row);
+    setCompletionNote('');
+    setError(null);
+  };
+
+  const handleCompleteSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!completing) return;
+    if (!completionNote.trim()) {
+      setError('Add a short outcome before completing.');
+      return;
+    }
+    setBusyId(completing.id);
     setError(null);
     try {
-      const result = await completeFollowUpAction(followUpId);
+      const result = await completeFollowUpAction(completing.id, {
+        completionNote: completionNote.trim(),
+      });
       if (result.ok === false) {
         setError(result.message);
         return;
       }
+      setCompleting(null);
       router.refresh();
     } catch {
       setError('That action could not be completed.');
@@ -174,12 +193,25 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
 
                 <div className="min-w-[150px]">
                   <Link
-                    href={`/crm/opportunities/${followUp.opportunityId}`}
+                    href={
+                      followUp.parentKind === 'lead'
+                        ? `/crm/leads/${followUp.leadId}`
+                        : `/crm/opportunities/${followUp.opportunityId}`
+                    }
                     className="block truncate text-[10px] font-semibold text-[#188c81] hover:underline"
                   >
                     {followUp.accountName ?? followUp.contactName}
                   </Link>
                   <p className="mt-0.5 flex items-center gap-1.5 text-[9px] text-[#8b969e]">
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] ${
+                        followUp.parentKind === 'lead'
+                          ? 'bg-[#eef0ff] text-[#5b63b8]'
+                          : 'bg-[#e8f4ff] text-[#287bb5]'
+                      }`}
+                    >
+                      {followUp.parentKind === 'lead' ? 'Lead' : 'Deal'}
+                    </span>
                     <Avatar name={followUp.ownerName} size="sm" />
                     {followUp.ownerName}
                   </p>
@@ -206,7 +238,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                   <button
                     type="button"
                     disabled={busyId === followUp.id}
-                    onClick={() => handleComplete(followUp.id)}
+                    onClick={() => openComplete(followUp)}
                     className="h-8 w-[92px] rounded-lg bg-[#132932] text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                   >
                     {busyId === followUp.id ? 'Saving…' : 'Complete'}
@@ -243,6 +275,57 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
           </div>
         </div>
       </div>
+
+      {completing ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#0e1c24]/40 px-4">
+          <form
+            onSubmit={handleCompleteSubmit}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Complete follow-up"
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-[0_20px_60px_rgba(15,30,40,0.25)]"
+          >
+            <h2 className="text-sm font-semibold text-[#202d35]">Complete follow-up</h2>
+            <p className="mt-1 text-[10px] text-[#7b8790]">
+              {ACTION_TYPE_LABELS[completing.actionType]} ·{' '}
+              {completing.accountName ?? completing.contactName} · due{' '}
+              {completing.dueAt.toLocaleDateString()}
+            </p>
+
+            <label className="mt-4 block">
+              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                Outcome (required)
+              </span>
+              <textarea
+                value={completionNote}
+                onChange={(event) => setCompletionNote(event.target.value)}
+                rows={3}
+                required
+                autoFocus
+                placeholder="What actually happened on this action?"
+                className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCompleting(null)}
+                className="h-8 rounded-lg border border-[#dfe4e7] px-3 text-[10px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busyId === completing.id || completionNote.trim().length === 0}
+                className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
+              >
+                {busyId === completing.id ? 'Saving…' : 'Complete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }

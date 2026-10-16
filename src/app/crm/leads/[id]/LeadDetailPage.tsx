@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Avatar, BackLink, Badge, InfoLine } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { markLeadContactedAction, disqualifyLeadAction, archiveLeadAction, restoreLeadAction, linkLeadToAccountAction } from '@/server/crm/leads/actions';
-import { qualifyLeadAction } from '@/server/crm/opportunities/actions';
+import { qualifyLeadAction, createLeadFollowUpAction, completeFollowUpAction } from '@/server/crm/opportunities/actions';
+import {
+  ACTION_TYPE_LABELS,
+  FOLLOW_UP_ACTION_TYPES,
+  type FollowUpActionType,
+} from '@/server/crm/opportunities/followup-actions';
+import type { FollowUp } from '@/server/crm/opportunities/followups';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
 
@@ -17,6 +23,12 @@ interface DisqualifyReason {
   requiresNote: boolean;
 }
 
+/** datetime-local wants "YYYY-MM-DDTHH:mm" in the browser's own timezone. */
+function toLocalInputValue(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 interface LeadDetailPageProps {
   lead: LeadDetail;
   disqualifyReasons: DisqualifyReason[];
@@ -25,9 +37,12 @@ interface LeadDetailPageProps {
   userId: string;
   opportunityId: string | null;
   qualifiedAt: Date | null;
+  followUps: FollowUp[];
+  /** Server render time, in epoch millis. Stable across client re-renders. */
+  now: number;
 }
 
-export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, userId, opportunityId, qualifiedAt }: LeadDetailPageProps) {
+export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, userId, opportunityId, qualifiedAt, followUps, now }: LeadDetailPageProps) {
   const router = useRouter();
 
   const [disqualifyOpen, setDisqualifyOpen] = useState(false);
@@ -59,10 +74,99 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const requiresNote = selectedReason?.requiresNote ?? false;
   const isArchived = lead.archivedAt !== null;
 
+  // Lead-level next actions: a promise made before the lead is qualified.
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpType, setFollowUpType] = useState<FollowUpActionType>('CALL');
+  const [followUpNote, setFollowUpNote] = useState('');
+  const [followUpDueAt, setFollowUpDueAt] = useState(() =>
+    toLocalInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+  );
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
+
+  const [completing, setCompleting] = useState<FollowUp | null>(null);
+  const [completionNote, setCompletionNote] = useState('');
+  const [completingSubmitting, setCompletingSubmitting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+
   const canMutate = userRole !== 'SALES_REP' || lead.ownerUserId === userId;
   // A disqualified lead is dead, so it can never become commercial work.
   const canQualify =
     !isArchived && opportunityId === null && lead.status !== 'DISQUALIFIED';
+  const canScheduleFollowUp = canMutate && !isArchived && lead.status !== 'DISQUALIFIED';
+
+  const pendingFollowUps = followUps
+    .filter((followUp) => followUp.completedAt === null)
+    .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+  const completedFollowUps = followUps
+    .filter((followUp) => followUp.completedAt !== null)
+    .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0));
+
+  const handleScheduleFollowUp = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!followUpDueAt) {
+      setFollowUpError('Choose when this action is due.');
+      return;
+    }
+    const dueAt = new Date(followUpDueAt);
+    if (Number.isNaN(dueAt.getTime())) {
+      setFollowUpError('That due date could not be read.');
+      return;
+    }
+    setFollowUpSubmitting(true);
+    setFollowUpError(null);
+    try {
+      const result = await createLeadFollowUpAction(lead.id, {
+        actionType: followUpType,
+        note: followUpNote.trim() || null,
+        dueAt: dueAt.toISOString(),
+      });
+      if (result.ok === false) {
+        setFollowUpError(result.message);
+        return;
+      }
+      setFollowUpOpen(false);
+      setFollowUpNote('');
+      setFollowUpType('CALL');
+      router.refresh();
+    } catch {
+      setFollowUpError('That action could not be scheduled.');
+    } finally {
+      setFollowUpSubmitting(false);
+    }
+  };
+
+  const openComplete = (followUp: FollowUp) => {
+    setCompleting(followUp);
+    setCompletionNote('');
+    setCompleteError(null);
+  };
+
+  const handleCompleteSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!completing) return;
+    if (!completionNote.trim()) {
+      setCompleteError('Add a short outcome before completing.');
+      return;
+    }
+    setCompletingSubmitting(true);
+    setCompleteError(null);
+    try {
+      const result = await completeFollowUpAction(completing.id, {
+        completionNote: completionNote.trim(),
+      });
+      if (result.ok === false) {
+        setCompleteError(result.message);
+        return;
+      }
+      setCompleting(null);
+      router.refresh();
+    } catch {
+      setCompleteError('That action could not be completed.');
+    } finally {
+      setCompletingSubmitting(false);
+    }
+  };
 
   const handleMarkContacted = async () => {
     setContactedSubmitting(true);
@@ -396,6 +500,157 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           </section>
 
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-[#1c2831]">Next actions</h2>
+                <p className="mt-0.5 text-[10px] text-[#8a959d]">
+                  What was promised on this lead, before it becomes a deal. Anything outstanding
+                  here moves to the opportunity when the lead is qualified.
+                </p>
+              </div>
+              {canScheduleFollowUp ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFollowUpOpen((open) => !open);
+                    setFollowUpError(null);
+                  }}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dce2e5] bg-white px-3 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+                >
+                  <CrmIcon name={followUpOpen ? 'x' : 'plus'} className="h-3.5 w-3.5" />
+                  Schedule follow-up
+                </button>
+              ) : null}
+            </div>
+
+            {followUpOpen && canScheduleFollowUp ? (
+              <form onSubmit={handleScheduleFollowUp} className="mt-4 rounded-lg border border-[#dfe5e8] bg-[#fbfcfc] p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
+                      Action
+                    </span>
+                    <select
+                      value={followUpType}
+                      onChange={(event) => setFollowUpType(event.target.value as FollowUpActionType)}
+                      className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] focus:border-[#18b6a4]"
+                    >
+                      {FOLLOW_UP_ACTION_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {ACTION_TYPE_LABELS[type]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
+                      Due
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={followUpDueAt}
+                      onChange={(event) => setFollowUpDueAt(event.target.value)}
+                      className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] focus:border-[#18b6a4]"
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 block">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
+                    Note (optional)
+                  </span>
+                  <input
+                    type="text"
+                    value={followUpNote}
+                    onChange={(event) => setFollowUpNote(event.target.value)}
+                    placeholder="What will this action cover?"
+                    className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
+                  />
+                </label>
+                {followUpError ? (
+                  <p role="alert" className="mt-2 text-[11px] font-semibold text-[#b83c43]">
+                    {followUpError}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={followUpSubmitting}
+                    className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
+                  >
+                    {followUpSubmitting ? 'Scheduling…' : 'Schedule'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFollowUpOpen(false);
+                      setFollowUpError(null);
+                    }}
+                    className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
+            <div className="mt-4 border-t border-[#e5eaec] pt-4">
+              {pendingFollowUps.length === 0 && completedFollowUps.length === 0 ? (
+                <p className="text-[10px] text-[#8a959d]">No actions recorded on this lead yet.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {pendingFollowUps.map((followUp) => {
+                    const overdue = followUp.dueAt.getTime() < now;
+                    return (
+                      <div key={followUp.id} className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-[11px] font-semibold text-[#35424b]">
+                            {ACTION_TYPE_LABELS[followUp.actionType]}
+                            {overdue ? (
+                              <span className="rounded-full bg-[#ffeaeb] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#bd3941]">
+                                Overdue
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="mt-0.5 text-[9px] text-[#8b969e]">
+                            Due {followUp.dueAt.toLocaleDateString()}{' '}
+                            {followUp.dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {followUp.note ? ` · ${followUp.note}` : null}
+                          </p>
+                        </div>
+                        {canMutate && !isArchived ? (
+                          <button
+                            type="button"
+                            onClick={() => openComplete(followUp)}
+                            className="h-7 shrink-0 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
+                          >
+                            Complete
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {completedFollowUps.map((followUp) => (
+                    <div key={followUp.id} className="flex items-center justify-between gap-3 opacity-70">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-[#35424b]">
+                          {ACTION_TYPE_LABELS[followUp.actionType]}
+                        </p>
+                        <p className="mt-0.5 text-[9px] text-[#8b969e]">
+                          Done {followUp.completedAt?.toLocaleDateString()}
+                          {followUp.note ? ` · ${followUp.note}` : null}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.08em] text-[#14815f]">
+                        Completed
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-[#1c2831]">Clinic / account</h2>
@@ -710,6 +965,63 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           </div>
         </div>
       )}
+
+      {/* Complete follow-up: the outcome is the point, so it is required. */}
+      {completing ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <form
+            onSubmit={handleCompleteSubmit}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Complete follow-up"
+            className="w-full max-w-md rounded-xl border border-[#dfe5e8] bg-white p-5 shadow-xl"
+          >
+            <h2 className="text-lg font-semibold text-[#1c2831]">Complete follow-up</h2>
+            <p className="mt-1 text-sm text-[#53616a]">
+              {ACTION_TYPE_LABELS[completing.actionType]} · due{' '}
+              {completing.dueAt.toLocaleDateString()}
+            </p>
+
+            <div className="mt-4">
+              <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
+                Outcome *
+              </label>
+              <textarea
+                value={completionNote}
+                onChange={(event) => setCompletionNote(event.target.value)}
+                rows={3}
+                autoFocus
+                className="w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#1c2831] placeholder-[#94a0a9] focus:border-[#18b6a4] resize-none"
+                placeholder="What actually happened on this action?"
+              />
+            </div>
+
+            {completeError ? (
+              <p role="alert" className="mt-2 text-sm text-[#c43f47]">
+                {completeError}
+              </p>
+            ) : null}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCompleting(null)}
+                disabled={completingSubmitting}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-4 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={completingSubmitting || completionNote.trim().length === 0}
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-50"
+              >
+                {completingSubmitting ? 'Saving…' : 'Complete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }

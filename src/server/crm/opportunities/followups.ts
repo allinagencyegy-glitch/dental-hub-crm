@@ -1,14 +1,15 @@
 /**
  * All SQL touching crm_followup.
  *
- * A follow-up is the unit of "what happens next" on an opportunity. Rows are
- * created pending and later stamped with completed_at; they are never deleted.
- * That is what makes the timeline auditable after the deal closes - a WON or
- * LOST transition changes only crm_opportunity.stage and leaves every promise
- * and every completed action intact.
+ * A follow-up is the unit of "what happens next". It hangs off exactly one
+ * parent: an opportunity, or - before qualification - a lead. Rows are created
+ * pending and later stamped with completed_at; they are never deleted. That is
+ * what makes the timeline auditable after the deal closes - a WON or LOST
+ * transition changes only crm_opportunity.stage and leaves every promise and
+ * every completed action intact.
  *
  * Row scope: see pushRepScope below. A SALES_REP reaches a follow-up either as
- * its assignee or as the owner of the opportunity it belongs to.
+ * its assignee or as the owner of the parent it belongs to.
  */
 import type { Db } from '@/server/db/types';
 import {
@@ -25,7 +26,10 @@ import {
 
 export interface FollowUp {
   id: string;
-  opportunityId: string;
+  /** The opportunity parent, or null when the parent is a lead. */
+  opportunityId: string | null;
+  /** The lead parent, or null when the parent is an opportunity. */
+  leadId: string | null;
   ownerUserId: string;
   actionType: FollowUpActionType;
   note: string | null;
@@ -37,7 +41,8 @@ export interface FollowUp {
 
 type FollowUpRow = {
   id: string;
-  opportunity_id: string;
+  opportunity_id: string | null;
+  lead_id: string | null;
   owner_user_id: string;
   action_type: FollowUpActionType;
   note: string | null;
@@ -51,6 +56,7 @@ function toFollowUp(row: FollowUpRow): FollowUp {
   return {
     id: row.id,
     opportunityId: row.opportunity_id,
+    leadId: row.lead_id,
     ownerUserId: row.owner_user_id,
     actionType: row.action_type,
     note: row.note,
@@ -64,15 +70,16 @@ function toFollowUp(row: FollowUpRow): FollowUp {
 // Unqualified, for `INSERT/UPDATE ... RETURNING`, where a table alias is not
 // available.
 const FOLLOW_UP_COLUMNS = `
-  id, opportunity_id, owner_user_id, action_type, note,
+  id, opportunity_id, lead_id, owner_user_id, action_type, note,
   due_at, completed_at, created_at, updated_at
 `;
 
 // Qualified with the `f` alias for every SELECT. Several of these columns
-// (id, owner_user_id, created_at, updated_at) also exist on crm_opportunity,
-// which the authorized lookups join against - unqualified they are ambiguous.
+// (id, owner_user_id, created_at, updated_at) also exist on crm_opportunity
+// and crm_lead, which the authorized lookups join against - unqualified they
+// are ambiguous.
 const FOLLOW_UP_COLUMNS_F = `
-  f.id, f.opportunity_id, f.owner_user_id, f.action_type, f.note,
+  f.id, f.opportunity_id, f.lead_id, f.owner_user_id, f.action_type, f.note,
   f.due_at, f.completed_at, f.created_at, f.updated_at
 `;
 
@@ -113,19 +120,39 @@ export class ClosedOpportunityError extends Error {
   }
 }
 
+export class LeadNotSchedulableError extends Error {
+  constructor() {
+    super('This lead is disqualified or archived, so no new next action can be scheduled.');
+    this.name = 'LeadNotSchedulableError';
+  }
+}
+
+export class FollowUpParentError extends Error {
+  constructor() {
+    super('A follow-up must belong to exactly one parent.');
+    this.name = 'FollowUpParentError';
+  }
+}
+
 /**
- * Schedules a new next action.
+ * Schedules a new next action against an opportunity or a lead.
  *
- * The opportunity must be open: a WON or LOST deal is history, and adding a
- * pending action to it would resurrect a closed deal in every "what is due"
- * queue. Completed actions on closed deals remain readable.
+ * Exactly one parent is required. An opportunity parent must be open: a WON or
+ * LOST deal is history, and adding a pending action to it would resurrect a
+ * closed deal in every "what is due" queue. A lead parent must be live: a
+ * disqualified or archived lead is likewise not work that should surface in the
+ * queue. Completed actions on either stay readable.
  *
- * The follow-up row and its activity-feed entry land in one transaction.
+ * The follow-up row and, for an opportunity, its activity-feed entry land in
+ * one transaction. Lead-level follow-ups carry no activity row yet - the
+ * activity model is opportunity-scoped - so the follow-up row itself, with its
+ * created_at and owner, is the durable record.
  */
 export async function createFollowUp(
   db: Db,
   input: {
-    opportunityId: string;
+    opportunityId?: string | null;
+    leadId?: string | null;
     ownerUserId: string;
     actionType: FollowUpActionType;
     note?: string | null;
@@ -141,40 +168,60 @@ export async function createFollowUp(
     throw new DueAtInPastError();
   }
 
+  const opportunityId = input.opportunityId ?? null;
+  const leadId = input.leadId ?? null;
+  if ((opportunityId === null) === (leadId === null)) {
+    throw new FollowUpParentError();
+  }
+
   const transaction = await beginTransaction(db);
   const client = transaction.client;
   try {
-    const { rows: oppRows } = await client.query<{ stage: string }>(
-      `SELECT stage FROM crm_opportunity WHERE id = $1`,
-      [input.opportunityId],
-    );
-    const opportunity = oppRows[0];
-    if (!opportunity) throw new FollowUpNotFoundError(input.opportunityId);
-    if (opportunity.stage === 'WON' || opportunity.stage === 'LOST') {
-      throw new ClosedOpportunityError();
+    if (opportunityId !== null) {
+      const { rows: oppRows } = await client.query<{ stage: string }>(
+        `SELECT stage FROM crm_opportunity WHERE id = $1`,
+        [opportunityId],
+      );
+      const opportunity = oppRows[0];
+      if (!opportunity) throw new FollowUpNotFoundError(opportunityId);
+      if (opportunity.stage === 'WON' || opportunity.stage === 'LOST') {
+        throw new ClosedOpportunityError();
+      }
+    } else {
+      const { rows: leadRows } = await client.query<{ status: string; archived_at: Date | null }>(
+        `SELECT status, archived_at FROM crm_lead WHERE id = $1`,
+        [leadId],
+      );
+      const lead = leadRows[0];
+      if (!lead) throw new FollowUpNotFoundError(leadId as string);
+      if (lead.status === 'DISQUALIFIED' || lead.archived_at !== null) {
+        throw new LeadNotSchedulableError();
+      }
     }
 
     const note = input.note?.trim() || null;
     const { rows } = await client.query<FollowUpRow>(
-      `INSERT INTO crm_followup (opportunity_id, owner_user_id, action_type, note, due_at)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO crm_followup (opportunity_id, lead_id, owner_user_id, action_type, note, due_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${FOLLOW_UP_COLUMNS}`,
-      [input.opportunityId, input.ownerUserId, input.actionType, note, input.dueAt],
+      [opportunityId, leadId, input.ownerUserId, input.actionType, note, input.dueAt],
     );
     const followUp = toFollowUp(rows[0]);
 
-    await recordOpportunityActivity(client, {
-      opportunityId: input.opportunityId,
-      activityType: 'FOLLOW_UP_CREATED',
-      description: `Follow-up scheduled: ${ACTION_TYPE_LABELS[input.actionType]}`,
-      metadata: {
-        followUpId: followUp.id,
-        actionType: input.actionType,
-        note,
-        dueAt: followUp.dueAt.toISOString(),
-      },
-      actorUserId: input.actorUserId ?? input.ownerUserId,
-    });
+    if (opportunityId !== null) {
+      await recordOpportunityActivity(client, {
+        opportunityId,
+        activityType: 'FOLLOW_UP_CREATED',
+        description: `Follow-up scheduled: ${ACTION_TYPE_LABELS[input.actionType]}`,
+        metadata: {
+          followUpId: followUp.id,
+          actionType: input.actionType,
+          note,
+          dueAt: followUp.dueAt.toISOString(),
+        },
+        actorUserId: input.actorUserId ?? input.ownerUserId,
+      });
+    }
 
     await commitTransaction(client);
     return followUp;
@@ -192,7 +239,14 @@ export async function createFollowUp(
  * completed_at is written once: the UPDATE is qualified on
  * `completed_at IS NULL`, so a double-click or a replayed request matches no row
  * and is reported as already-completed rather than overwriting the real
- * completion time. The activity-feed entry lands in the same transaction.
+ * completion time. The activity-feed entry (opportunity parents only) lands in
+ * the same transaction.
+ *
+ * The completion note is what actually happened. It is appended to the row's
+ * note rather than replacing it, so the timeline reads as "what was planned" and
+ * then "what happened". COALESCE guards the case where the row had no plan note:
+ * without it, `NULL || E'\n' || outcome` would evaluate to NULL and silently
+ * throw the outcome away.
  */
 export async function completeFollowUp(
   db: Db,
@@ -212,7 +266,7 @@ export async function completeFollowUp(
       `UPDATE crm_followup
           SET completed_at = now(),
               note = CASE
-                WHEN $2::text IS NOT NULL THEN trim(btrim(note || E'\n' || $2::text))
+                WHEN $2::text IS NOT NULL THEN trim(btrim(COALESCE(note || E'\n', '') || $2::text))
                 ELSE note
               END,
               updated_at = now()
@@ -224,18 +278,20 @@ export async function completeFollowUp(
     if (rows.length === 0) throw new FollowUpAlreadyCompletedError();
     const completed = toFollowUp(rows[0]);
 
-    await recordOpportunityActivity(client, {
-      opportunityId: completed.opportunityId,
-      activityType: 'FOLLOW_UP_COMPLETED',
-      description: `Follow-up completed: ${ACTION_TYPE_LABELS[completed.actionType]}`,
-      metadata: {
-        followUpId: completed.id,
-        actionType: completed.actionType,
-        completionNote,
-        completedAt: completed.completedAt?.toISOString() ?? null,
-      },
-      actorUserId: actor.userId,
-    });
+    if (completed.opportunityId !== null) {
+      await recordOpportunityActivity(client, {
+        opportunityId: completed.opportunityId,
+        activityType: 'FOLLOW_UP_COMPLETED',
+        description: `Follow-up completed: ${ACTION_TYPE_LABELS[completed.actionType]}`,
+        metadata: {
+          followUpId: completed.id,
+          actionType: completed.actionType,
+          completionNote,
+          completedAt: completed.completedAt?.toISOString() ?? null,
+        },
+        actorUserId: actor.userId,
+      });
+    }
 
     await commitTransaction(client);
     return completed;
@@ -276,18 +332,20 @@ export async function rescheduleFollowUp(
     if (rows.length === 0) throw new FollowUpAlreadyCompletedError();
     const rescheduled = toFollowUp(rows[0]);
 
-    await recordOpportunityActivity(client, {
-      opportunityId: rescheduled.opportunityId,
-      activityType: 'FOLLOW_UP_RESCHEDULED',
-      description: `Follow-up rescheduled: ${ACTION_TYPE_LABELS[rescheduled.actionType]}`,
-      metadata: {
-        followUpId: rescheduled.id,
-        actionType: rescheduled.actionType,
-        previousDueAt: followUp.dueAt.toISOString(),
-        newDueAt: rescheduled.dueAt.toISOString(),
-      },
-      actorUserId: actor.userId,
-    });
+    if (rescheduled.opportunityId !== null) {
+      await recordOpportunityActivity(client, {
+        opportunityId: rescheduled.opportunityId,
+        activityType: 'FOLLOW_UP_RESCHEDULED',
+        description: `Follow-up rescheduled: ${ACTION_TYPE_LABELS[rescheduled.actionType]}`,
+        metadata: {
+          followUpId: rescheduled.id,
+          actionType: rescheduled.actionType,
+          previousDueAt: followUp.dueAt.toISOString(),
+          newDueAt: rescheduled.dueAt.toISOString(),
+        },
+        actorUserId: actor.userId,
+      });
+    }
 
     await commitTransaction(client);
     return rescheduled;
@@ -300,10 +358,89 @@ export async function rescheduleFollowUp(
 }
 
 /**
+ * Moves a lead's pending follow-ups onto the opportunity the lead was qualified
+ * into.
+ *
+ * Runs on the caller's connection so it composes inside the qualification
+ * transaction: the opportunity and its inherited next action commit together,
+ * or neither does. Completed follow-ups stay on the lead - they are history of
+ * the pre-qualification phase, not outstanding work. A single FOLLOW_UP_MOVED
+ * activity on the new opportunity records the hand-off so the timeline can
+ * explain where the inherited work came from.
+ */
+export async function movePendingFollowUpsToOpportunity(
+  db: Db,
+  leadId: string,
+  opportunityId: string,
+  actorUserId: string | null,
+): Promise<number> {
+  const { rows } = await db.query<{ id: string }>(
+    `UPDATE crm_followup
+        SET opportunity_id = $2, lead_id = NULL, updated_at = now()
+      WHERE lead_id = $1 AND completed_at IS NULL
+      RETURNING id`,
+    [leadId, opportunityId],
+  );
+
+  if (rows.length === 0) return 0;
+
+  await recordOpportunityActivity(db, {
+    opportunityId,
+    activityType: 'FOLLOW_UP_MOVED',
+    description:
+      rows.length === 1
+        ? 'Pending follow-up carried over from the lead'
+        : `${rows.length} pending follow-ups carried over from the lead`,
+    metadata: { followUpIds: rows.map((row) => row.id), count: rows.length },
+    actorUserId,
+  });
+
+  return rows.length;
+}
+
+/**
+ * Reassigns a parent's pending follow-ups to a new owner.
+ *
+ * Runs on the caller's connection so it composes inside the reassignment
+ * transaction. Completed follow-ups are left with the person who did the work:
+ * moving them would rewrite who completed what.
+ */
+export async function reassignPendingFollowUpsForOpportunity(
+  db: Db,
+  opportunityId: string,
+  newOwnerUserId: string,
+): Promise<number> {
+  const { rows } = await db.query<{ id: string }>(
+    `UPDATE crm_followup
+        SET owner_user_id = $2, updated_at = now()
+      WHERE opportunity_id = $1 AND completed_at IS NULL AND owner_user_id <> $2
+      RETURNING id`,
+    [opportunityId, newOwnerUserId],
+  );
+  return rows.length;
+}
+
+/** The lead-parent twin of reassignPendingFollowUpsForOpportunity. */
+export async function reassignPendingLeadFollowUps(
+  db: Db,
+  leadId: string,
+  newOwnerUserId: string,
+): Promise<number> {
+  const { rows } = await db.query<{ id: string }>(
+    `UPDATE crm_followup
+        SET owner_user_id = $2, updated_at = now()
+      WHERE lead_id = $1 AND completed_at IS NULL AND owner_user_id <> $2
+      RETURNING id`,
+    [leadId, newOwnerUserId],
+  );
+  return rows.length;
+}
+
+/**
  * Reads one follow-up within the actor's row scope.
  *
- * SALES_REP must be the assignee or the owner of the parent opportunity - a rep
- * cannot reach a colleague's opportunity by guessing an id.
+ * SALES_REP must be the assignee or the owner of the parent - a rep cannot
+ * reach a colleague's follow-up by guessing an id.
  */
 export async function findFollowUpById(
   db: Db,
@@ -314,14 +451,15 @@ export async function findFollowUpById(
   const params: string[] = [followUpId];
 
   if (actor.role === 'SALES_REP') {
-    where += ' AND (f.owner_user_id = $2 OR o.owner_user_id = $2)';
+    where += ' AND (f.owner_user_id = $2 OR o.owner_user_id = $2 OR l.owner_user_id = $2)';
     params.push(actor.userId);
   }
 
   const { rows } = await db.query<FollowUpRow>(
     `SELECT ${FOLLOW_UP_COLUMNS_F}
        FROM crm_followup f
-       JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_lead l        ON l.id = f.lead_id
      ${where}`,
     params,
   );
@@ -371,7 +509,35 @@ export async function listFollowUpsForOpportunity(
   return rows.map(toFollowUp);
 }
 
+/** Full history for one lead, newest due date first. Completed rows included. */
+export async function listFollowUpsForLead(
+  db: Db,
+  leadId: string,
+  actor: Actor,
+): Promise<FollowUp[]> {
+  let where = 'WHERE f.lead_id = $1';
+  const params: string[] = [leadId];
+
+  if (actor.role === 'SALES_REP') {
+    where += ' AND (f.owner_user_id = $2 OR l.owner_user_id = $2)';
+    params.push(actor.userId);
+  }
+
+  const { rows } = await db.query<FollowUpRow>(
+    `SELECT ${FOLLOW_UP_COLUMNS_F}
+       FROM crm_followup f
+       JOIN crm_lead l ON l.id = f.lead_id
+     ${where}
+     ORDER BY f.due_at DESC, f.created_at DESC`,
+    params,
+  );
+
+  return rows.map(toFollowUp);
+}
+
 export type FollowUpWindow = 'overdue' | 'today' | 'upcoming' | 'completed';
+
+export type FollowUpParentKind = 'lead' | 'opportunity';
 
 /**
  * Day-window boundaries for the action queue, in the CRM's business timezone.
@@ -406,12 +572,12 @@ const START_OF_TOMORROW_CAIRO_SQL = `date_trunc('day', now() + interval '1 day',
 /**
  * A SALES_REP's row scope for follow-ups.
  *
- * A follow-up is scoped to its own assignee OR to the owner of the opportunity
- * it hangs off, because the two can differ: a manager may assign an action to a
+ * A follow-up is scoped to its own assignee OR to the owner of the parent it
+ * hangs off, because the two can differ: a manager may assign an action to a
  * rep on a deal owned by someone else. Scoping on the parent alone would lock
  * the assignee out of work they were explicitly given; scoping on the follow-up
- * alone would hide deal history from the person who owns the deal. This is not
- * an opportunity-visibility leak - it never exposes a deal the rep cannot open.
+ * alone would hide parent history from the person who owns it. This is not a
+ * visibility leak - it never exposes a parent the rep cannot open.
  */
 function pushRepScope(
   clauses: string[],
@@ -422,16 +588,20 @@ function pushRepScope(
   params.push(actor.userId);
   const placeholder = `$${params.length}`;
   clauses.push(
-    `(f.owner_user_id = ${placeholder} OR o.owner_user_id = ${placeholder})`,
+    `(f.owner_user_id = ${placeholder} OR o.owner_user_id = ${placeholder} OR l.owner_user_id = ${placeholder})`,
   );
 }
 
 /**
- * Closed deals keep their follow-up rows, but a pending action on a WON or
- * LOST opportunity is no longer outstanding work, so it must not sit in the
- * queue nagging the owner. It stays visible in the deal's own history.
+ * Closed parents keep their follow-up rows, but a pending action on a WON/LOST
+ * opportunity - or on a disqualified or archived lead - is no longer
+ * outstanding work, so it must not sit in the queue nagging the owner. It
+ * stays visible in the parent's own history.
  */
-const OPEN_OPPORTUNITY = `o.stage NOT IN ('WON', 'LOST')`;
+const OPEN_PARENT = `(
+  (f.opportunity_id IS NOT NULL AND o.stage NOT IN ('WON', 'LOST'))
+  OR (f.lead_id IS NOT NULL AND l.status <> 'DISQUALIFIED' AND l.archived_at IS NULL)
+)`;
 
 export interface ListFollowUpsOptions {
   window?: FollowUpWindow;
@@ -441,7 +611,8 @@ export interface ListFollowUpsOptions {
 }
 
 export interface FollowUpListRow extends FollowUp {
-  opportunityStage: string;
+  parentKind: FollowUpParentKind;
+  opportunityStage: string | null;
   contactName: string;
   accountName: string | null;
   ownerName: string;
@@ -456,8 +627,9 @@ export interface FollowUpListRow extends FollowUp {
  * `upcoming` - pending and due after today.
  * `completed`- stamped rows, newest first.
  *
- * Scoped to opportunities the actor may see, so the queue never leaks another
- * rep's customers.
+ * Scoped to parents the actor may see, so the queue never leaks another rep's
+ * customers. Both opportunity and lead parents appear, so a promised callback
+ * on an unqualified lead is as visible as one on a live deal.
  */
 export async function listFollowUps(
   db: Db,
@@ -478,23 +650,23 @@ export async function listFollowUps(
 
   switch (window) {
     case 'overdue':
-      clauses.push(OPEN_OPPORTUNITY);
+      clauses.push(OPEN_PARENT);
       clauses.push('f.completed_at IS NULL');
       clauses.push('f.due_at < now()');
       break;
     case 'today':
-      clauses.push(OPEN_OPPORTUNITY);
+      clauses.push(OPEN_PARENT);
       clauses.push('f.completed_at IS NULL');
       clauses.push('f.due_at >= now()');
       clauses.push(`f.due_at < ${START_OF_TOMORROW_CAIRO_SQL}`);
       break;
     case 'upcoming':
-      clauses.push(OPEN_OPPORTUNITY);
+      clauses.push(OPEN_PARENT);
       clauses.push('f.completed_at IS NULL');
       clauses.push(`f.due_at >= ${START_OF_TOMORROW_CAIRO_SQL}`);
       break;
     case 'completed':
-      // Closed deals are not filtered here: completed history is exactly what
+      // Closed parents are not filtered here: completed history is exactly what
       // must survive a WON or LOST outcome.
       clauses.push('f.completed_at IS NOT NULL');
       break;
@@ -505,7 +677,8 @@ export async function listFollowUps(
   const { rows: countRows } = await db.query<{ count: string }>(
     `SELECT count(*)::text AS count
        FROM crm_followup f
-       JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_lead l        ON l.id = f.lead_id
      ${where}`,
     params,
   );
@@ -514,17 +687,19 @@ export async function listFollowUps(
   const listParams = [...params, limit, offset];
   const { rows } = await db.query<FollowUpListRowRaw>(
     `SELECT
-       f.id, f.opportunity_id, f.owner_user_id, f.action_type, f.note,
+       f.id, f.opportunity_id, f.lead_id, f.owner_user_id, f.action_type, f.note,
        f.due_at, f.completed_at, f.created_at, f.updated_at,
        o.stage          AS opportunity_stage,
        c.full_name      AS contact_name,
        a.name           AS account_name,
-       u.display_name   AS owner_name
+       u.display_name   AS owner_name,
+       CASE WHEN f.opportunity_id IS NOT NULL THEN 'opportunity' ELSE 'lead' END AS parent_kind
      FROM crm_followup f
-     JOIN crm_opportunity o ON o.id = f.opportunity_id
-     JOIN crm_contact c      ON c.id = o.contact_id
-     JOIN crm_user u         ON u.id = f.owner_user_id
-     LEFT JOIN crm_account a ON a.id = o.account_id
+     LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+     LEFT JOIN crm_lead l        ON l.id = f.lead_id
+     JOIN crm_contact c          ON c.id = COALESCE(o.contact_id, l.contact_id)
+     JOIN crm_user u             ON u.id = f.owner_user_id
+     LEFT JOIN crm_account a     ON a.id = COALESCE(o.account_id, l.account_id)
      ${where}
      ORDER BY f.due_at ASC, f.created_at ASC
      LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
@@ -535,6 +710,7 @@ export async function listFollowUps(
   return {
     followUps: rows.map((row) => ({
       ...toFollowUp(row),
+      parentKind: row.parent_kind,
       opportunityStage: row.opportunity_stage,
       contactName: row.contact_name,
       accountName: row.account_name,
@@ -546,10 +722,11 @@ export async function listFollowUps(
 }
 
 type FollowUpListRowRaw = FollowUpRow & {
-  opportunity_stage: string;
+  opportunity_stage: string | null;
   contact_name: string;
   account_name: string | null;
   owner_name: string;
+  parent_kind: FollowUpParentKind;
 };
 
 /** Tally of pending actions per window, for the queue header counts. */
@@ -561,7 +738,7 @@ export async function countFollowUpsByWindow(
   let scope = '';
 
   if (actor.role === 'SALES_REP') {
-    scope = 'AND (f.owner_user_id = $1 OR o.owner_user_id = $1)';
+    scope = 'AND (f.owner_user_id = $1 OR o.owner_user_id = $1 OR l.owner_user_id = $1)';
     params.push(actor.userId);
   }
 
@@ -571,23 +748,24 @@ export async function countFollowUpsByWindow(
     `SELECT
        count(*) FILTER (
          WHERE f.completed_at IS NULL
-           AND ${OPEN_OPPORTUNITY}
+           AND ${OPEN_PARENT}
            AND f.due_at < now()
        )::text AS overdue,
        count(*) FILTER (
          WHERE f.completed_at IS NULL
-           AND ${OPEN_OPPORTUNITY}
+           AND ${OPEN_PARENT}
            AND f.due_at >= now()
            AND f.due_at < ${START_OF_TOMORROW_CAIRO_SQL}
        )::text AS today,
        count(*) FILTER (
          WHERE f.completed_at IS NULL
-           AND ${OPEN_OPPORTUNITY}
+           AND ${OPEN_PARENT}
            AND f.due_at >= ${START_OF_TOMORROW_CAIRO_SQL}
        )::text AS upcoming,
        count(*) FILTER (WHERE f.completed_at IS NOT NULL)::text AS completed
      FROM crm_followup f
-     JOIN crm_opportunity o ON o.id = f.opportunity_id
+     LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+     LEFT JOIN crm_lead l        ON l.id = f.lead_id
      WHERE true ${scope}`,
     params,
   );

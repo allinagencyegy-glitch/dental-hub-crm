@@ -401,6 +401,8 @@ export interface OpportunityDetail extends Opportunity {
   ownerEmail: string;
   contactName: string;
   contactEmail: string | null;
+  contactPhone: string | null;
+  contactPhoneIsWhatsApp: boolean;
   accountName: string | null;
   productCategoryName: string | null;
   lostReasonLabel: string | null;
@@ -414,6 +416,8 @@ type OpportunityDetailRaw = OpportunityRow & {
   owner_email: string;
   contact_name: string;
   contact_email: string | null;
+  contact_phone: string | null;
+  contact_phone_is_whatsapp: boolean;
   account_name: string | null;
   product_category_name: string | null;
   lost_reason_label: string | null;
@@ -444,6 +448,8 @@ export async function findOpportunityDetailById(
        u.email       AS owner_email,
        c.full_name   AS contact_name,
        c.email       AS contact_email,
+       phone.value   AS contact_phone,
+       COALESCE(phone.is_whatsapp, false) AS contact_phone_is_whatsapp,
        a.name        AS account_name,
        pc.name       AS product_category_name,
        r.label       AS lost_reason_label,
@@ -458,6 +464,13 @@ export async function findOpportunityDetailById(
      LEFT JOIN crm_account a ON a.id = o.account_id
      LEFT JOIN crm_product_category pc ON pc.id = o.product_category_id
      LEFT JOIN crm_outcome_reason r ON r.id = o.lost_reason_id
+     LEFT JOIN LATERAL (
+       SELECT cc.value, cc.is_whatsapp
+         FROM crm_contact_channel cc
+        WHERE cc.contact_id = c.id AND cc.channel_type = 'PHONE' AND cc.is_active = true
+        ORDER BY cc.created_at ASC, cc.id ASC
+        LIMIT 1
+     ) phone ON true
      ${where}`,
     params,
   );
@@ -471,6 +484,8 @@ export async function findOpportunityDetailById(
     ownerEmail: row.owner_email,
     contactName: row.contact_name,
     contactEmail: row.contact_email,
+    contactPhone: row.contact_phone,
+    contactPhoneIsWhatsApp: row.contact_phone_is_whatsapp,
     accountName: row.account_name,
     productCategoryName: row.product_category_name,
     lostReasonLabel: row.lost_reason_label,
@@ -635,6 +650,7 @@ export type OpportunityActivityType =
   | 'FOLLOW_UP_CREATED'
   | 'FOLLOW_UP_COMPLETED'
   | 'FOLLOW_UP_RESCHEDULED'
+  | 'FOLLOW_UP_MOVED'
   | 'NOTE_ADDED'
   | 'OWNER_CHANGED'
   | 'QUOTATION_CREATED'

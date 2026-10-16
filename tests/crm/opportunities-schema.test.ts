@@ -338,5 +338,74 @@ describe('crm_opportunity / crm_followup schema', () => {
         insertFollowUp({ opportunity_id: '00000000-0000-0000-0000-000000000000' }),
       );
     });
+
+    it('pins a follow-up to exactly one parent', async () => {
+      // Neither parent: a follow-up that belongs to nothing is not work.
+      await expectConstraint(
+        'crm_followup_exactly_one_parent',
+        client.query(
+          `INSERT INTO crm_followup (owner_user_id, action_type, due_at)
+           VALUES ($1, 'CALL', now() + interval '1 day')`,
+          [ownerId],
+        ),
+      );
+
+      // Both parents: a follow-up that belongs to two things is ambiguous.
+      await expectConstraint(
+        'crm_followup_exactly_one_parent',
+        client.query(
+          `INSERT INTO crm_followup (opportunity_id, lead_id, owner_user_id, action_type, due_at)
+           VALUES ($1, $2, $3, 'CALL', now() + interval '1 day')`,
+          [opportunityId, await newLead(), ownerId],
+        ),
+      );
+    });
+
+    it('accepts a follow-up whose only parent is a lead', async () => {
+      const leadId = await newLead();
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, due_at)
+         VALUES ($1, $2, 'CALL', now() + interval '1 day') RETURNING id`,
+        [leadId, ownerId],
+      );
+      expect(rows[0].id).toBeTruthy();
+    });
+
+    it('rejects a lead follow-up for a lead that does not exist', async () => {
+      await expectConstraint(
+        'crm_followup_lead_id_fkey',
+        client.query(
+          `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, due_at)
+           VALUES ('00000000-0000-0000-0000-000000000000', $1, 'CALL', now() + interval '1 day')`,
+          [ownerId],
+        ),
+      );
+    });
+
+    it('refuses to delete a lead that owns a follow-up', async () => {
+      const leadId = await newLead();
+      await client.query(
+        `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, due_at)
+         VALUES ($1, $2, 'CALL', now() + interval '1 day')`,
+        [leadId, ownerId],
+      );
+      await expectConstraint(
+        'crm_followup_lead_id_fkey',
+        client.query(`DELETE FROM crm_lead WHERE id = $1`, [leadId]),
+      );
+    });
+  });
+
+  describe('crm_opportunity_activity', () => {
+    it('accepts the FOLLOW_UP_MOVED activity type', async () => {
+      const opportunityId = await insertOpportunity();
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO crm_opportunity_activity (opportunity_id, activity_type, description)
+         VALUES ($1, 'FOLLOW_UP_MOVED', 'Pending follow-up carried over from the lead')
+         RETURNING id`,
+        [opportunityId],
+      );
+      expect(rows[0].id).toBeTruthy();
+    });
   });
 });

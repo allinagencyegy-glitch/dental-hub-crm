@@ -49,12 +49,16 @@ import {
   rescheduleFollowUp,
   listFollowUps,
   listFollowUpsForOpportunity,
+  listFollowUpsForLead,
   findNextPendingFollowUp,
   countFollowUpsByWindow,
+  movePendingFollowUpsToOpportunity,
+  reassignPendingFollowUpsForOpportunity,
   ClosedOpportunityError,
   DueAtInPastError,
   FollowUpAlreadyCompletedError,
   FollowUpNotFoundError,
+  LeadNotSchedulableError,
   type FollowUp,
   type FollowUpListRow,
   type FollowUpWindow,
@@ -77,6 +81,7 @@ type FailureCode =
   | 'OWNER_NOT_FOUND'
   | 'CATEGORY_NOT_FOUND'
   | 'CLOSED_OPPORTUNITY'
+  | 'LEAD_NOT_SCHEDULABLE'
   | 'ALREADY_COMPLETED'
   | 'DUE_IN_PAST'
   | 'INTERNAL';
@@ -201,6 +206,16 @@ export async function qualifyLeadUseCase(
         [leadId],
       );
     }
+
+    // A promised next action follows its lead into commercial work: the
+    // callback still has to happen, only its parent changes. Completed
+    // follow-ups stay on the lead as pre-qualification history.
+    await movePendingFollowUpsToOpportunity(
+      transaction.client,
+      leadId,
+      opportunity.id,
+      actor.userId,
+    );
 
     await commitTransaction(transaction.client);
     return { ok: true, opportunity };
@@ -355,6 +370,13 @@ export async function updateOpportunityUseCase(
           { userId: actor.userId, role: actor.role },
           input.ownerUserId,
         );
+        // Outstanding work moves with the deal, so the previous owner stops
+        // appearing in the queue for a customer they no longer own.
+        await reassignPendingFollowUpsForOpportunity(
+          transaction.client,
+          opportunityId,
+          input.ownerUserId,
+        );
       }
 
       await updateOpportunity(
@@ -415,13 +437,29 @@ export async function reassignOpportunityOwnerUseCase(
   }
 
   try {
-    const opportunity = await reassignOpportunityOwner(
-      database,
-      opportunityId,
-      { userId: actor.userId, role: actor.role },
-      newOwnerUserId,
-    );
-    return { ok: true, opportunity };
+    // The owner change, its activity row, and the hand-off of outstanding
+    // follow-ups are one commercial fact; they commit together or not at all.
+    const transaction = await beginTransaction(database);
+    try {
+      const opportunity = await reassignOpportunityOwner(
+        transaction.client,
+        opportunityId,
+        { userId: actor.userId, role: actor.role },
+        newOwnerUserId,
+      );
+      await reassignPendingFollowUpsForOpportunity(
+        transaction.client,
+        opportunityId,
+        newOwnerUserId,
+      );
+      await commitTransaction(transaction.client);
+      return { ok: true, opportunity };
+    } catch (error) {
+      await rollbackTransaction(transaction.client);
+      throw error;
+    } finally {
+      transaction.release();
+    }
   } catch (error) {
     if (error instanceof OpportunityNotFoundError) {
       return { ok: false, error: 'NOT_FOUND', message: error.message };
@@ -515,6 +553,85 @@ export async function createFollowUpUseCase(
   }
 }
 
+export type CreateLeadFollowUpResult = { ok: true; followUp: FollowUp } | Failure;
+
+/**
+ * Schedules a next action on a lead - the call centre's promise before the lead
+ * becomes commercial work.
+ *
+ * Mirrors createFollowUpUseCase: the owner defaults to the lead owner, a
+ * manager may name a different assignee, and a rep may only schedule for
+ * themselves. A disqualified or archived lead cannot take new work.
+ */
+export async function createLeadFollowUpUseCase(
+  actor: Actor,
+  leadId: string,
+  input: {
+    actionType: string;
+    note?: string | null;
+    dueAt: Date;
+    ownerUserId?: string | null;
+  },
+  db?: Db,
+): Promise<CreateLeadFollowUpResult> {
+  const database = getDb(db);
+
+  if (!isFollowUpActionType(input.actionType)) {
+    return { ok: false, error: 'VALIDATION', message: 'Unknown follow-up action type.' };
+  }
+  const actionType: FollowUpActionType = input.actionType;
+
+  if (Number.isNaN(input.dueAt.getTime())) {
+    return { ok: false, error: 'VALIDATION', message: 'A due date is required.' };
+  }
+
+  const lead = await findLeadById(database, leadId, {
+    userId: actor.userId,
+    role: actor.role,
+  });
+  if (!lead) {
+    return { ok: false, error: 'NOT_FOUND', message: 'Lead not found.' };
+  }
+
+  let ownerUserId = lead.ownerUserId;
+  if (input.ownerUserId !== undefined && input.ownerUserId !== null && input.ownerUserId !== lead.ownerUserId) {
+    if (actor.role === 'SALES_REP') {
+      return { ok: false, error: 'UNAUTHORISED', message: 'Sales reps cannot assign follow-ups to others.' };
+    }
+    const owner = await findUserById(database, input.ownerUserId);
+    if (!owner || !owner.is_active) {
+      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
+    }
+    if (owner.role !== 'SALES_REP' && owner.role !== 'SALES_MANAGER') {
+      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
+    }
+    ownerUserId = owner.id;
+  }
+
+  try {
+    const followUp = await createFollowUp(database, {
+      leadId,
+      ownerUserId,
+      actionType,
+      note: input.note ?? null,
+      dueAt: input.dueAt,
+      actorUserId: actor.userId,
+    });
+    return { ok: true, followUp };
+  } catch (error) {
+    if (error instanceof LeadNotSchedulableError) {
+      return { ok: false, error: 'LEAD_NOT_SCHEDULABLE', message: error.message };
+    }
+    if (error instanceof DueAtInPastError) {
+      return { ok: false, error: 'DUE_IN_PAST', message: error.message };
+    }
+    if (error instanceof FollowUpNotFoundError) {
+      return { ok: false, error: 'NOT_FOUND', message: 'Lead not found.' };
+    }
+    throw error;
+  }
+}
+
 export type CompleteFollowUpResult = { ok: true; followUp: FollowUp } | Failure;
 
 export async function completeFollowUpUseCase(
@@ -525,12 +642,25 @@ export async function completeFollowUpUseCase(
 ): Promise<CompleteFollowUpResult> {
   const database = getDb(db);
 
+  // Completing without saying what happened is the gap this slice closes: the
+  // next person to read the account needs the outcome, not just a tick. The
+  // repository stays permissive so maintenance scripts can still stamp rows;
+  // the product contract requires the note.
+  const completionNote = input.completionNote?.trim() ?? '';
+  if (completionNote.length === 0) {
+    return {
+      ok: false,
+      error: 'VALIDATION',
+      message: 'An outcome is required to complete a follow-up.',
+    };
+  }
+
   try {
     const followUp = await completeFollowUp(
       database,
       followUpId,
       { userId: actor.userId, role: actor.role },
-      input,
+      { completionNote },
     );
     return { ok: true, followUp };
   } catch (error) {
@@ -596,6 +726,25 @@ export async function listOpportunityFollowUpsUseCase(
 ): Promise<FollowUp[]> {
   const database = getDb(db);
   return listFollowUpsForOpportunity(database, opportunityId, {
+    userId: actor.userId,
+    role: actor.role,
+  });
+}
+
+export async function listLeadFollowUpsUseCase(
+  actor: Actor,
+  leadId: string,
+  db?: Db,
+): Promise<FollowUp[]> {
+  const database = getDb(db);
+  // Authorise against the lead first: without this a rep could probe
+  // follow-up ids across leads they cannot open.
+  const lead = await findLeadById(database, leadId, {
+    userId: actor.userId,
+    role: actor.role,
+  });
+  if (!lead) return [];
+  return listFollowUpsForLead(database, leadId, {
     userId: actor.userId,
     role: actor.role,
   });

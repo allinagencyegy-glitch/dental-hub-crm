@@ -533,7 +533,7 @@ describe('opportunities and follow-ups (use cases)', () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
 
-      const done = await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
+      const done = await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       expect(done.ok).toBe(true);
       if (done.ok) expect(done.followUp.completedAt).toBeInstanceOf(Date);
     });
@@ -547,8 +547,8 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       if (!created.ok) throw new Error('setup failed');
-      await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
-      const again = await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
+      await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
+      const again = await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       expect(again).toMatchObject({ ok: false, error: 'ALREADY_COMPLETED' });
     });
 
@@ -561,8 +561,8 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       if (!created.ok) throw new Error('setup failed');
-      const first = await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
-      await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
+      const first = await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
+      await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       const { rows } = await client.query<{ completed_at: Date }>(
         `SELECT completed_at FROM crm_followup WHERE id = $1`,
         [created.followUp.id],
@@ -587,7 +587,7 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       if (!first.ok) throw new Error('setup failed');
-      await completeFollowUpUseCase(repA, first.followUp.id, {}, client);
+      await completeFollowUpUseCase(repA, first.followUp.id, { completionNote: 'Outcome recorded' }, client);
       await createFollowUpUseCase(repA, opportunity.id, { actionType: 'MEETING', dueAt: inDays(4) }, client);
       const next = await getNextPendingFollowUpUseCase(repA, opportunity.id, client);
       expect(next!.actionType).toBe('MEETING');
@@ -602,7 +602,7 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       if (!created.ok) throw new Error('setup failed');
-      await completeFollowUpUseCase(repA, created.followUp.id, {}, client);
+      await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       await advanceTo(opportunity.id, 'WON');
 
       const completed = await listFollowUpsUseCase(manager, { window: 'completed' }, client);
@@ -676,7 +676,7 @@ describe('opportunities and follow-ups (use cases)', () => {
       if (!created.ok) return;
 
       // repB does not own the opportunity, but the action is theirs to do.
-      const done = await completeFollowUpUseCase(repB, created.followUp.id, {}, client);
+      const done = await completeFollowUpUseCase(repB, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       expect(done.ok).toBe(true);
     });
 
@@ -689,7 +689,7 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       if (!created.ok) throw new Error('setup failed');
-      const done = await completeFollowUpUseCase(repB, created.followUp.id, {}, client);
+      const done = await completeFollowUpUseCase(repB, created.followUp.id, { completionNote: 'Outcome recorded' }, client);
       // Unauthorised reads as missing, not forbidden.
       expect(done).toMatchObject({ ok: false, error: 'NOT_FOUND' });
     });

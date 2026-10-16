@@ -61,7 +61,7 @@ interface QuotationWorkspaceProps {
   /** Present in create mode: the opportunity this quotation belongs to. */
   opportunity: Pick<
     OpportunityDetailData,
-    'id' | 'contactName' | 'accountName' | 'ownerName' | 'stage'
+    'id' | 'contactName' | 'contactPhone' | 'contactPhoneIsWhatsApp' | 'accountName' | 'ownerName' | 'stage'
   > | null;
   snapshots: QuotationRevisionSnapshot[];
 }
@@ -299,6 +299,28 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
             {opportunity?.accountName ?? quotation?.accountName ?? 'No account linked'} ·{' '}
             {opportunity?.contactName ?? quotation?.contactName}
           </p>
+          {(() => {
+            const phone = opportunity?.contactPhone ?? quotation?.contactPhone ?? null;
+            if (!phone) return null;
+            const isWhatsApp = opportunity?.contactPhoneIsWhatsApp ?? quotation?.contactPhoneIsWhatsApp;
+            return (
+              <p className="mt-0.5 flex items-center gap-2 text-[10px] text-[#596872]">
+                <a href={`tel:${phone}`} className="font-semibold text-[#188c81] hover:underline">
+                  {phone}
+                </a>
+                {isWhatsApp ? (
+                  <a
+                    href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full bg-[#e8f8f1] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-[#14815f]"
+                  >
+                    WhatsApp
+                  </a>
+                ) : null}
+              </p>
+            );
+          })()}
           <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-[#9aa3aa]">
             {quotation
               ? `Version ${quotation.version}${quotation.previousQuoteNumber ? ` · revises ${quotation.previousQuoteNumber}` : ''} · created by ${quotation.createdByName} on ${quotation.createdAt.toLocaleDateString()}`

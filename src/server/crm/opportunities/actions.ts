@@ -14,10 +14,12 @@ import {
   updateOpportunityUseCase,
   reassignOpportunityOwnerUseCase,
   createFollowUpUseCase,
+  createLeadFollowUpUseCase,
   completeFollowUpUseCase,
   rescheduleFollowUpUseCase,
   listFollowUpsUseCase,
   listOpportunityFollowUpsUseCase,
+  listLeadFollowUpsUseCase,
   getNextPendingFollowUpUseCase,
   getLostReasonsUseCase,
   getOpportunityOwnersUseCase,
@@ -29,6 +31,7 @@ import {
   type UpdateOpportunityResult,
   type ReassignOwnerResult,
   type CreateFollowUpResult,
+  type CreateLeadFollowUpResult,
   type CompleteFollowUpResult,
   type RescheduleFollowUpResult,
 } from './service';
@@ -167,6 +170,29 @@ export async function createFollowUpAction(
   return createFollowUpUseCase(actor, opportunityId, { ...input, dueAt });
 }
 
+/**
+ * Schedules a next action on a lead. Same permission as an opportunity
+ * follow-up - a promise is a promise regardless of what it hangs off.
+ */
+export async function createLeadFollowUpAction(
+  leadId: string,
+  input: { actionType: string; note?: string | null; dueAt: string; ownerUserId?: string | null },
+): Promise<CreateLeadFollowUpResult> {
+  const session = await assertPermission('followups:write');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+
+  if (!(FOLLOW_UP_ACTION_TYPES as readonly string[]).includes(input.actionType)) {
+    return { ok: false, error: 'VALIDATION', message: 'Unknown follow-up action type.' };
+  }
+
+  const dueAt = new Date(input.dueAt);
+  if (Number.isNaN(dueAt.getTime())) {
+    return { ok: false, error: 'VALIDATION', message: 'A due date is required.' };
+  }
+
+  return createLeadFollowUpUseCase(actor, leadId, { ...input, dueAt });
+}
+
 export async function completeFollowUpAction(
   followUpId: string,
   input: { completionNote?: string | null } = {},
@@ -217,6 +243,14 @@ export async function listOpportunityFollowUpsAction(
   const session = await assertPermission('followups:read');
   const actor: Actor = { userId: session.user.id, role: session.role };
   return listOpportunityFollowUpsUseCase(actor, opportunityId);
+}
+
+export async function listLeadFollowUpsAction(
+  leadId: string,
+): Promise<Awaited<ReturnType<typeof listLeadFollowUpsUseCase>>> {
+  const session = await assertPermission('followups:read');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+  return listLeadFollowUpsUseCase(actor, leadId);
 }
 
 export async function getNextPendingFollowUpAction(

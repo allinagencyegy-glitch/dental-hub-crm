@@ -61,6 +61,7 @@ const ACTIVITY_ICON: Record<string, CrmIconName> = {
   FOLLOW_UP_CREATED: 'clock',
   FOLLOW_UP_COMPLETED: 'check',
   FOLLOW_UP_RESCHEDULED: 'clock',
+  FOLLOW_UP_MOVED: 'activity',
   NOTE_ADDED: 'edit',
   OWNER_CHANGED: 'team',
   QUOTATION_CREATED: 'quotation',
@@ -135,6 +136,17 @@ export function OpportunityDetail({
   // Inline reschedule of a pending follow-up from the timeline.
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
   const [rescheduleDueAt, setRescheduleDueAt] = useState('');
+
+  // Completion captures the outcome - completing without saying what happened
+  // is the gap this closes - and may chain the next action in one pass.
+  const [completing, setCompleting] = useState<FollowUp | null>(null);
+  const [completionNote, setCompletionNote] = useState('');
+  const [scheduleNext, setScheduleNext] = useState(false);
+  const [nextActionType, setNextActionType] = useState<FollowUpActionType>('CALL');
+  const [nextNote, setNextNote] = useState('');
+  const [nextDueAt, setNextDueAt] = useState(() =>
+    toLocalInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000)),
+  );
 
   const [editing, setEditing] = useState(false);
   const [estimatedValue, setEstimatedValue] = useState(
@@ -243,11 +255,61 @@ export function OpportunityDetail({
     ).then(() => setLosing(false));
   };
 
-  const handleComplete = (followUpId: string) => {
-    void run(
-      () => completeFollowUpAction(followUpId),
-      'Action completed. The next action is now due to be scheduled.',
-    );
+  const openComplete = (followUp: FollowUp) => {
+    setCompleting(followUp);
+    setCompletionNote('');
+    setScheduleNext(false);
+    setNextActionType('CALL');
+    setNextNote('');
+    setNextDueAt(toLocalInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000)));
+    setError(null);
+  };
+
+  const handleCompleteSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!completing) return;
+    if (!completionNote.trim()) {
+      setError('Add a short outcome before completing.');
+      return;
+    }
+    if (scheduleNext && !nextDueAt) {
+      setError('Choose when the next action is due.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const completed = await completeFollowUpAction(completing.id, {
+        completionNote: completionNote.trim(),
+      });
+      if (completed.ok === false) {
+        setError(completed.message);
+        return;
+      }
+      if (scheduleNext) {
+        const dueAt = new Date(nextDueAt);
+        if (Number.isNaN(dueAt.getTime())) {
+          setError('That due date could not be read.');
+          return;
+        }
+        const next = await createFollowUpAction(opportunity.id, {
+          actionType: nextActionType,
+          note: nextNote.trim() || null,
+          dueAt: dueAt.toISOString(),
+        });
+        if (next.ok === false) {
+          setError(next.message);
+          return;
+        }
+      }
+      setNotice(scheduleNext ? 'Action completed and the next one scheduled.' : 'Action completed.');
+      setCompleting(null);
+      router.refresh();
+    } catch {
+      setError('That action could not be completed.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleReschedule = (followUp: FollowUp) => {
@@ -436,7 +498,7 @@ export function OpportunityDetail({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => handleComplete(nextAction.id)}
+                  onClick={() => openComplete(nextAction)}
                   className="rounded-lg bg-[#16232c] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#22323c] disabled:opacity-60"
                 >
                   Complete action
@@ -931,7 +993,7 @@ export function OpportunityDetail({
                             <button
                               type="button"
                               disabled={busy}
-                              onClick={() => handleComplete(followUp.id)}
+                              onClick={() => openComplete(followUp)}
                               className="h-7 shrink-0 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa] disabled:opacity-60"
                             >
                               Complete
@@ -958,6 +1020,26 @@ export function OpportunityDetail({
                 </p>
                 {opportunity.contactEmail ? (
                   <p className="truncate text-[9px] text-[#909aa1]">{opportunity.contactEmail}</p>
+                ) : null}
+                {opportunity.contactPhone ? (
+                  <p className="mt-0.5 flex items-center gap-1.5">
+                    <a
+                      href={`tel:${opportunity.contactPhone}`}
+                      className="truncate text-[9px] font-semibold text-[#188c81] hover:underline"
+                    >
+                      {opportunity.contactPhone}
+                    </a>
+                    {opportunity.contactPhoneIsWhatsApp ? (
+                      <a
+                        href={`https://wa.me/${opportunity.contactPhone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full bg-[#e8f8f1] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-[#14815f]"
+                      >
+                        WhatsApp
+                      </a>
+                    ) : null}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -1098,6 +1180,111 @@ export function OpportunityDetail({
           </section>
         </aside>
       </div>
+
+      {completing ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#0e1c24]/40 px-4">
+          <form
+            onSubmit={handleCompleteSubmit}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Complete follow-up"
+            className="w-full max-w-md rounded-xl bg-white p-5 shadow-[0_20px_60px_rgba(15,30,40,0.25)]"
+          >
+            <h2 className="text-sm font-semibold text-[#202d35]">Complete follow-up</h2>
+            <p className="mt-1 text-[10px] text-[#7b8790]">
+              {ACTION_TYPE_LABELS[completing.actionType]} · due{' '}
+              {completing.dueAt.toLocaleDateString()}
+            </p>
+
+            <label className="mt-4 block">
+              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                Outcome (required)
+              </span>
+              <textarea
+                value={completionNote}
+                onChange={(event) => setCompletionNote(event.target.value)}
+                rows={3}
+                required
+                autoFocus
+                placeholder="What actually happened on this action?"
+                className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
+              />
+            </label>
+
+            <label className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#53616a]">
+              <input
+                type="checkbox"
+                checked={scheduleNext}
+                onChange={(event) => setScheduleNext(event.target.checked)}
+                className="h-3.5 w-3.5 accent-[#18b6a4]"
+              />
+              Schedule the next action now
+            </label>
+
+            {scheduleNext ? (
+              <div className="mt-3 space-y-2.5 rounded-lg bg-[#f6f8f9] p-3">
+                <div className="flex gap-2.5">
+                  <label className="flex-1">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                      Type
+                    </span>
+                    <select
+                      value={nextActionType}
+                      onChange={(event) => setNextActionType(event.target.value as FollowUpActionType)}
+                      className="mt-1 h-8 w-full rounded-md border border-[#dce2e5] bg-white px-2 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                    >
+                      {FOLLOW_UP_ACTION_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {ACTION_TYPE_LABELS[type]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex-1">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                      Due
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={nextDueAt}
+                      onChange={(event) => setNextDueAt(event.target.value)}
+                      className="mt-1 h-8 w-full rounded-md border border-[#dce2e5] bg-white px-2 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                    Note (optional)
+                  </span>
+                  <input
+                    type="text"
+                    value={nextNote}
+                    onChange={(event) => setNextNote(event.target.value)}
+                    className="mt-1 h-8 w-full rounded-md border border-[#dce2e5] bg-white px-2 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCompleting(null)}
+                className="h-8 rounded-lg border border-[#dfe4e7] px-3 text-[10px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy || completionNote.trim().length === 0}
+                className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
+              >
+                {busy ? 'Saving…' : 'Complete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }

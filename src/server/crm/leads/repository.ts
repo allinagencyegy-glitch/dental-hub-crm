@@ -25,6 +25,10 @@ import { normaliseEmail } from '@/server/users/repository';
 import { normalisePhoneToE164 } from '@/server/crm/contacts/phone';
 import { createContact, findContactByPhone, DuplicatePhoneError, DuplicateContactEmailError } from '@/server/crm/contacts/repository';
 import { listAccountsForContact } from '@/server/crm/accounts/repository';
+// crm_followup SQL lives in one place; a lead can own follow-ups too (before
+// qualification), so its reassignment hand-off reuses that module rather than
+// duplicating the table's rules here.
+import { reassignPendingLeadFollowUps } from '@/server/crm/opportunities/followups';
 
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'DISQUALIFIED';
 
@@ -831,6 +835,20 @@ export async function updateLead(
       updates.push('updated_at = now()');
       const query = `UPDATE crm_lead SET ${updates.join(', ')} WHERE id = $1 RETURNING ${LEAD_RETURNING_COLUMNS}`;
       const result = await client.query<LeadRow>(query, params);
+
+      // A pending callback follows the lead to its new owner, or the previous
+      // owner keeps appearing in the queue for a customer they no longer own.
+      // Completed follow-ups stay put - they record who did the work. Runs on
+      // the same transaction, so the hand-off and the owner change land
+      // together.
+      if (
+        input.ownerUserId !== undefined &&
+        input.ownerUserId !== null &&
+        input.ownerUserId !== lead.ownerUserId
+      ) {
+        await reassignPendingLeadFollowUps(client, leadId, input.ownerUserId);
+      }
+
       await client.query('COMMIT');
       return toLead(result.rows[0]);
     } else {

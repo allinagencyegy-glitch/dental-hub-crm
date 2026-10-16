@@ -143,6 +143,8 @@ export interface QuotationDetail extends Quotation {
   items: QuotationItem[];
   contactName: string;
   contactEmail: string | null;
+  contactPhone: string | null;
+  contactPhoneIsWhatsApp: boolean;
   accountName: string | null;
   opportunityStage: string;
   ownerName: string;
@@ -431,6 +433,8 @@ export async function findQuotationDetailById(
       previous_quote_number: string | null;
       contact_name: string;
       contact_email: string | null;
+      contact_phone: string | null;
+      contact_phone_is_whatsapp: boolean;
       account_name: string | null;
       opportunity_stage: string;
       owner_name: string;
@@ -441,6 +445,8 @@ export async function findQuotationDetailById(
             prev.quote_number AS previous_quote_number,
             c.full_name      AS contact_name,
             c.email          AS contact_email,
+            phone.value      AS contact_phone,
+            COALESCE(phone.is_whatsapp, false) AS contact_phone_is_whatsapp,
             a.name           AS account_name,
             o.stage          AS opportunity_stage,
             owner.display_name AS owner_name,
@@ -452,6 +458,13 @@ export async function findQuotationDetailById(
        JOIN crm_user creator  ON creator.id = q.created_by
        LEFT JOIN crm_account a ON a.id = q.account_id
        LEFT JOIN crm_quotation prev ON prev.id = q.previous_quote_id
+       LEFT JOIN LATERAL (
+         SELECT cc.value, cc.is_whatsapp
+           FROM crm_contact_channel cc
+          WHERE cc.contact_id = c.id AND cc.channel_type = 'PHONE' AND cc.is_active = true
+          ORDER BY cc.created_at ASC, cc.id ASC
+          LIMIT 1
+       ) phone ON true
       WHERE ${clauses.join(' AND ')}`,
     params,
   );
@@ -465,6 +478,8 @@ export async function findQuotationDetailById(
     items,
     contactName: row.contact_name,
     contactEmail: row.contact_email,
+    contactPhone: row.contact_phone,
+    contactPhoneIsWhatsApp: row.contact_phone_is_whatsapp,
     accountName: row.account_name,
     opportunityStage: row.opportunity_stage,
     ownerName: row.owner_name,

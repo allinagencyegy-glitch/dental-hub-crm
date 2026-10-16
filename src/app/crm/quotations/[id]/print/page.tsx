@@ -72,6 +72,9 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
               {quotation.accountName ?? quotation.contactName}
             </p>
             <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactName}</p>
+            {quotation.contactPhone ? (
+              <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactPhone}</p>
+            ) : null}
             {quotation.contactEmail ? (
               <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactEmail}</p>
             ) : null}
