@@ -173,17 +173,26 @@ describe('canonical phone identity', () => {
     expect(normalisePhoneToE164('0020 101 234 5678')).toBe(canonical);
     expect(normalisePhoneToE164('201012345678')).toBe(canonical);
     expect(normalisePhoneToE164('10 1234 5678')).toBe(canonical);
+    expect(normalisePhoneToE164('٠١٠١٢٣٤٥٦٧٨')).toBe(canonical);
+    expect(normalisePhoneToE164('۰۱۰۱۲۳۴۵۶۷۸')).toBe(canonical);
+    expect(normalisePhoneToE164('\u200F01012345678')).toBe(canonical);
+    expect(normalisePhoneToE164('٠١٠٠١٢٣٤٥٦٧')).toBe('+201001234567');
 
     // Cairo landline: trunk form, country-code form and bare national form agree.
     expect(normalisePhoneToE164('02 2345 6789')).toBe('+20223456789');
     expect(normalisePhoneToE164('20223456789')).toBe('+20223456789');
+    expect(normalisePhoneToE164('03 4567890')).toBe('+2034567890');
 
     // Already-international non-Egyptian numbers pass through untouched.
     expect(normalisePhoneToE164('+1 (415) 555-0132')).toBe('+14155550132');
   });
 
   it('rejects invalid phone numbers', () => {
-    for (const bad of ['', '   ', 'abc', '+', '01012', '010123456789012345678', '010-1234-ab']) {
+    for (const bad of [
+      '', '   ', 'abc', '+', '01012', '010123456789012345678', '010-1234-ab',
+      '1001234', '0100123456789', '01312345678', '0101234567',
+      '+201312345678', '0020 131 234 5678', '201312345678',
+    ]) {
       expect(() => normalisePhoneToE164(bad)).toThrow(InvalidPhoneError);
     }
   });
@@ -198,7 +207,8 @@ describe('canonical phone identity', () => {
   it('never lets the same canonical phone belong to two contacts', async () => {
     const first = await createContact(db, { fullName: 'Phone First' });
     const second = await createContact(db, { fullName: 'Phone Second' });
-    const phone = `01${Math.floor(100000000 + Math.random() * 899999999)}`;
+    const prefix = ['010', '011', '012', '015'][Math.floor(Math.random() * 4)];
+    const phone = `${prefix}${Math.floor(10000000 + Math.random() * 90000000)}`;
 
     await addPhoneChannel(db, { contactId: first.id, phone });
 
@@ -224,7 +234,9 @@ describe('canonical phone identity', () => {
 
     expect((await findContactByPhone(db, `+20${phone.slice(1)}`))?.id).toBe(contact.id);
     expect((await findContactByPhone(db, `00 20 ${phone.slice(1)}`))?.id).toBe(contact.id);
-    expect(await findContactByPhone(db, '+201999999999')).toBeNull();
+    const arabicPhone = phone.replace(/[0-9]/g, (digit) => String.fromCharCode(0x0660 + Number(digit)));
+    expect((await findContactByPhone(db, `\u200F${arabicPhone}`))?.id).toBe(contact.id);
+    expect(await findContactByPhone(db, '+201599999999')).toBeNull();
   });
 
   it('lets the database itself refuse a non-E.164 channel value', async () => {

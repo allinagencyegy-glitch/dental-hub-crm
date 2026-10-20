@@ -15,9 +15,14 @@
  *      is treated as the country code written without '+'.
  *   5. Anything else is an Egyptian national number and gets '+20' prepended.
  *
- * The result is validated as E.164: '+', a non-zero first digit, 7-15 digits
- * in total. Spaces, dashes, dots and parentheses are tolerated as separators;
- * every other non-digit rejects the number.
+ * Arabic-Indic and Extended Arabic-Indic digits become ASCII digits before
+ * parsing, and invisible direction marks are removed. Spaces, dashes, dots
+ * and parentheses are tolerated as separators; every other non-digit rejects
+ * the number. The result must be E.164: '+', a non-zero first digit, 7-15 digits
+ * in total. Egyptian results must also have a valid 10-digit mobile national
+ * number (1 followed by 0, 1, 2 or 5 and eight digits) or an 8-9 digit
+ * landline national number beginning with 2-9. Other countries receive only
+ * the E.164 check.
  *
  * This is deliberately a small explicit normaliser, not a phone-number
  * library: the scope is Egyptian numbers plus already-international input,
@@ -27,8 +32,14 @@
  */
 const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 const SEPARATORS = /[\s().-]/g;
+const ARABIC_DIGITS = /[\u0660-\u0669\u06f0-\u06f9]/g;
+const DIRECTION_MARKS = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 export const DEFAULT_COUNTRY_CODE = '20'; // EG
+export const EGYPTIAN_MOBILE_SECOND_DIGITS = '0125';
+
+const EGYPTIAN_MOBILE_PATTERN = new RegExp(`^1[${EGYPTIAN_MOBILE_SECOND_DIGITS}]\\d{8}$`);
+const EGYPTIAN_LANDLINE_PATTERN = /^[2-9]\d{7,8}$/;
 
 export class InvalidPhoneError extends Error {
   constructor(raw: string) {
@@ -45,7 +56,13 @@ export function normalisePhoneToE164(
   raw: string,
   defaultCountryCode: string = DEFAULT_COUNTRY_CODE,
 ): string {
-  const trimmed = raw.trim();
+  const trimmed = raw
+    .replace(DIRECTION_MARKS, '')
+    .replace(ARABIC_DIGITS, (digit) => {
+      const code = digit.charCodeAt(0);
+      return String(code - (code >= 0x06f0 ? 0x06f0 : 0x0660));
+    })
+    .trim();
   if (trimmed.length === 0) throw new InvalidPhoneError(raw);
 
   const hasPlus = trimmed.startsWith('+');
@@ -70,5 +87,11 @@ export function normalisePhoneToE164(
 
   const e164 = `+${international}`;
   if (!E164_PATTERN.test(e164)) throw new InvalidPhoneError(raw);
+  if (e164.startsWith('+20')) {
+    const national = international.slice(DEFAULT_COUNTRY_CODE.length);
+    if (!EGYPTIAN_MOBILE_PATTERN.test(national) && !EGYPTIAN_LANDLINE_PATTERN.test(national)) {
+      throw new InvalidPhoneError(raw);
+    }
+  }
   return e164;
 }
