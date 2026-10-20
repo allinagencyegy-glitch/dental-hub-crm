@@ -41,7 +41,7 @@ export interface DashboardFilters {
    * leads, won/lost, stage distribution, funnel, lost reasons, rep performance,
    * quotation outcomes and the pipeline board alike. Source lives only on
    * crm_lead, so opportunity / follow-up / quotation metrics trace it through
-   * crm_opportunity.lead_id (pushSourceScope).
+   * their lead parent (pushSourceScope).
    */
   sourceId?: string | null;
   custom?: CustomRange | null;
@@ -85,7 +85,7 @@ function pushLeadSourceFilter(clauses: string[], params: Param[], sourceId?: str
 
 /**
  * Source scope for any query rooted at an opportunity, follow-up or quotation.
- * Source is a property of the lead, so the filter traces crm_opportunity.lead_id
+ * Source is a property of the lead, so the filter traces the parent lead id
  * back to crm_lead with an EXISTS predicate instead of a join: it composes with
  * every FROM shape and, unlike a join, can never multiply rows.
  */
@@ -119,7 +119,7 @@ function pushOpportunityScope(
   pushSourceScope(clauses, params, sourceId);
 }
 
-/** A rep reaches follow-ups on their opportunities or assigned to them. */
+/** A rep reaches follow-ups on their opportunities, leads, or assigned to them. */
 function pushFollowUpScope(
   clauses: string[],
   params: Param[],
@@ -129,12 +129,14 @@ function pushFollowUpScope(
 ): void {
   if (actor.role === 'SALES_REP') {
     params.push(actor.userId);
-    clauses.push(`(f.owner_user_id = $${params.length} OR o.owner_user_id = $${params.length})`);
+    clauses.push(
+      `(f.owner_user_id = $${params.length} OR o.owner_user_id = $${params.length} OR l.owner_user_id = $${params.length})`,
+    );
   } else if (ownerUserId) {
     params.push(ownerUserId);
-    clauses.push(`o.owner_user_id = $${params.length}`);
+    clauses.push(`COALESCE(o.owner_user_id, l.owner_user_id) = $${params.length}`);
   }
-  pushSourceScope(clauses, params, sourceId);
+  pushSourceScope(clauses, params, sourceId, 'COALESCE(o.lead_id, f.lead_id)');
 }
 
 /** `WHERE a AND b AND ...` from a condition list, or '' when empty. */
@@ -152,6 +154,10 @@ function rowsOf<T>(promise: Promise<{ rows: T[] }>): Promise<T[]> {
 }
 
 const OPEN_STAGES_SQL = `o.stage NOT IN ('WON', 'LOST')`;
+const OPEN_FOLLOWUP_PARENT_SQL = `(
+  (f.opportunity_id IS NOT NULL AND ${OPEN_STAGES_SQL})
+  OR (f.lead_id IS NOT NULL AND l.status <> 'DISQUALIFIED' AND l.archived_at IS NULL)
+)`;
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -175,7 +181,7 @@ export interface DashboardOverview {
   openOpportunities: number;
   /** Snapshot: sum of estimated_value over open opportunities. */
   pipelineValue: number;
-  /** Snapshot: pending follow-ups due before now on open opportunities. */
+  /** Snapshot: pending follow-ups due before now on open parents. */
   overdueFollowUps: number;
   /** Snapshot: pending follow-ups due later today (Cairo day). */
   dueTodayFollowUps: number;
@@ -241,7 +247,7 @@ export interface RepPerformanceRow {
   openOpportunities: number;
   /** Snapshot: sum of estimated_value over open opportunities owned. */
   pipelineValue: number;
-  /** Snapshot: pending overdue follow-ups on open opportunities owned. */
+  /** Snapshot: pending overdue follow-ups on open parents owned. */
   overdueFollowUps: number;
   /** followup.completed_at inside the range. */
   completedFollowUps: number;
@@ -347,7 +353,7 @@ export async function getDashboardOverview(
   const followUpClauses: string[] = [];
   const followUpParams: Param[] = [];
   pushFollowUpScope(followUpClauses, followUpParams, actor, ownerUserId, sourceId);
-  followUpClauses.push('f.completed_at IS NULL', OPEN_STAGES_SQL);
+  followUpClauses.push('f.completed_at IS NULL', OPEN_FOLLOWUP_PARENT_SQL);
 
   const quotationClauses: string[] = [];
   const quotationParams: Param[] = [];
@@ -393,7 +399,8 @@ export async function getDashboardOverview(
              AND f.due_at < date_trunc('day', now() + interval '1 day', 'Africa/Cairo')
          )::text AS due_today
        FROM crm_followup f
-       JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+       LEFT JOIN crm_lead l ON l.id = f.lead_id
        ${where(followUpClauses)}`,
       followUpParams,
     ),
@@ -588,7 +595,7 @@ export async function getSalesRepPerformance(
   const oppClauses: string[] = [];
   pushSourceScope(oppClauses, params, sourceId);
   const followUpClauses: string[] = [];
-  pushSourceScope(followUpClauses, params, sourceId);
+  pushSourceScope(followUpClauses, params, sourceId, 'COALESCE(o.lead_id, f.lead_id)');
   const quotationClauses: string[] = [];
   pushSourceScope(quotationClauses, params, sourceId);
 
@@ -627,15 +634,16 @@ export async function getSalesRepPerformance(
         GROUP BY o.owner_user_id
      ),
      followup_stats AS (
-       SELECT o.owner_user_id AS uid,
+       SELECT COALESCE(o.owner_user_id, l.owner_user_id) AS uid,
               count(*) FILTER (
-                WHERE f.completed_at IS NULL AND ${OPEN_STAGES_SQL} AND f.due_at < now()
+                WHERE f.completed_at IS NULL AND ${OPEN_FOLLOWUP_PARENT_SQL} AND f.due_at < now()
               )::text AS overdue_followups,
               count(*) FILTER (WHERE ${completedInRange})::text AS completed_followups
          FROM crm_followup f
-         JOIN crm_opportunity o ON o.id = f.opportunity_id
+         LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+         LEFT JOIN crm_lead l ON l.id = f.lead_id
         ${where(followUpClauses)}
-        GROUP BY o.owner_user_id
+        GROUP BY COALESCE(o.owner_user_id, l.owner_user_id)
      ),
      quotation_stats AS (
        SELECT o.owner_user_id AS uid,

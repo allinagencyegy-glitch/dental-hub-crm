@@ -14,7 +14,7 @@ import {
   changeOpportunityStageUseCase,
   type Actor,
 } from '../../src/server/crm/opportunities/service';
-import { createFollowUp } from '../../src/server/crm/opportunities/followups';
+import { countFollowUpsByWindow, createFollowUp } from '../../src/server/crm/opportunities/followups';
 import {
   createQuotationUseCase,
   transitionQuotationUseCase,
@@ -103,6 +103,14 @@ describe('pipeline + management dashboard', () => {
   }
 
   const sql = (fragment: string, params: unknown[] = []) => client.query(fragment, params);
+
+  async function addOverdueLeadFollowUp(leadId: string, ownerUserId: string): Promise<void> {
+    await sql(
+      `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, note, due_at)
+       VALUES ($1, $2, 'CALL', NULL, now() - interval '1 day')`,
+      [leadId, ownerUserId],
+    );
+  }
 
   /** Sends (and optionally accepts) a one-item quotation on an opportunity. */
   async function sendQuotation(opportunityId: string, accept = false): Promise<string> {
@@ -282,6 +290,97 @@ describe('pipeline + management dashboard', () => {
       expect(payload.overview.dueTodayFollowUps).toBe(1);
       expect(payload.overview.dueTodayFollowUps).toBeGreaterThan(0);
       void dueTodayId;
+    });
+
+    it('counts an open lead follow-up in overview and the lead owner’s performance row', async () => {
+      const leadId = await newLead(repAId);
+      // Assignment can differ from parent ownership. The team row uses the lead owner.
+      await addOverdueLeadFollowUp(leadId, repBId);
+      await sql(
+        `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, note, due_at, completed_at, created_at)
+         VALUES ($1, $2, 'CALL', NULL, now() - interval '2 days', now() - interval '1 day', now() - interval '3 days')`,
+        [leadId, repBId],
+      );
+
+      const payload = await getDashboardUseCase(manager, { range: 'last30' }, client);
+      expect(payload.overview.overdueFollowUps).toBe(1);
+      expect(payload.repPerformance.find((row) => row.userId === repAId)).toMatchObject({
+        overdueFollowUps: 1,
+        completedFollowUps: 1,
+      });
+      expect(payload.repPerformance.find((row) => row.userId === repBId)?.overdueFollowUps).toBe(0);
+
+      const ownerFiltered = await getDashboardUseCase(
+        manager, { range: 'last30', ownerUserId: repAId }, client,
+      );
+      expect(ownerFiltered.overview.overdueFollowUps).toBe(1);
+      const otherOwner = await getDashboardUseCase(
+        manager, { range: 'last30', ownerUserId: repBId }, client,
+      );
+      expect(otherOwner.overview.overdueFollowUps).toBe(0);
+    });
+
+    it('excludes pending follow-ups on disqualified and archived leads', async () => {
+      const openId = await newLead(repAId);
+      const disqualifiedId = await newLead(repAId);
+      const archivedId = await newLead(repAId);
+      for (const leadId of [openId, disqualifiedId, archivedId]) {
+        await addOverdueLeadFollowUp(leadId, repAId);
+      }
+      await sql(`UPDATE crm_lead SET status = 'DISQUALIFIED' WHERE id = $1`, [disqualifiedId]);
+      await sql(
+        `UPDATE crm_lead SET archived_at = now(), archived_by_user_id = $2 WHERE id = $1`,
+        [archivedId, managerId],
+      );
+
+      const payload = await getDashboardUseCase(manager, { range: 'last30' }, client);
+      expect(payload.overview.overdueFollowUps).toBe(1);
+      expect(payload.repPerformance.find((row) => row.userId === repAId)?.overdueFollowUps).toBe(1);
+    });
+
+    it('matches the Follow-ups overdue count for a rep and manager without filters', async () => {
+      const leadId = await newLead(repAId);
+      await addOverdueLeadFollowUp(leadId, repBId);
+      const opportunity = await newOpportunity(repBId);
+      await sql(
+        `INSERT INTO crm_followup (opportunity_id, owner_user_id, action_type, note, due_at)
+         VALUES ($1, $2, 'CALL', NULL, now() - interval '1 day')`,
+        [opportunity.id, repBId],
+      );
+
+      for (const actor of [repA, manager]) {
+        const dashboard = await getDashboardUseCase(actor, { range: 'last30' }, client);
+        const followUps = await countFollowUpsByWindow(client, actor);
+        expect(dashboard.overview.overdueFollowUps).toBe(followUps.overdue);
+      }
+      expect((await countFollowUpsByWindow(client, repA)).overdue).toBe(1);
+      expect((await countFollowUpsByWindow(client, manager)).overdue).toBe(2);
+    });
+
+    it('applies the source filter to lead follow-ups', async () => {
+      const websiteLeadId = await newLead(repAId);
+      const phoneLead = await createLead(client, {
+        sourceId: sourcePhoneId,
+        campaignId: null,
+        contactId,
+        accountId: null,
+        productCategoryId: null,
+        note: null,
+        ownerUserId: repAId,
+      });
+      await addOverdueLeadFollowUp(websiteLeadId, repAId);
+      await addOverdueLeadFollowUp(phoneLead.id, repAId);
+
+      const website = await getDashboardUseCase(
+        manager, { range: 'last30', sourceId: sourceWebsiteId }, client,
+      );
+      const phone = await getDashboardUseCase(
+        manager, { range: 'last30', sourceId: sourcePhoneId }, client,
+      );
+      expect(website.overview.overdueFollowUps).toBe(1);
+      expect(phone.overview.overdueFollowUps).toBe(1);
+      expect(website.repPerformance.find((row) => row.userId === repAId)?.overdueFollowUps).toBe(1);
+      expect(phone.repPerformance.find((row) => row.userId === repAId)?.overdueFollowUps).toBe(1);
     });
 
     it('counts quotation outcomes by their status timestamps', async () => {
