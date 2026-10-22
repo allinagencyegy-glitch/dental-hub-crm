@@ -3,13 +3,15 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { NavItem } from './navigation';
+import { isNavItemActive } from './nav-active';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 
-const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'followups' | 'quotation' | 'reports' | 'team' | 'settings'> = {
+const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'opportunities' | 'followups' | 'quotation' | 'reports' | 'team' | 'settings'> = {
   Home: 'home',
   Leads: 'leads',
   Customers: 'customers',
   Pipeline: 'pipeline',
+  Opportunities: 'opportunities',
   'Follow-ups': 'followups',
   Quotations: 'quotation',
   Reports: 'reports',
@@ -18,7 +20,15 @@ const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'fo
   Users: 'settings',
 };
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
+function NavLink({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
   const Icon = navIcons[item.label] || 'home';
   // Reserved-but-unimplemented destinations render as inert text. No href, so
   // there is nothing to click and no fake page behind it.
@@ -39,6 +49,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
       href={item.href}
+      onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition ${active ? 'bg-[#18b6a4] text-white shadow-[0_7px_22px_rgba(24,182,164,0.18)]' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
     >
@@ -48,7 +59,17 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-export function SidebarNav({ title, items }: { title: string; items: NavItem[] }) {
+export function SidebarNav({
+  title,
+  items,
+  ariaLabel,
+  onNavigate,
+}: {
+  title: string;
+  items: NavItem[];
+  ariaLabel?: string;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   if (items.length === 0) return null;
 
@@ -57,9 +78,14 @@ export function SidebarNav({ title, items }: { title: string; items: NavItem[] }
       <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">
         {title}
       </p>
-      <nav className="space-y-1" aria-label={title}>
+      <nav className="space-y-1" aria-label={ariaLabel ?? title}>
         {items.map((item) => (
-          <NavLink key={item.label} item={item} active={item.href === pathname} />
+          <NavLink
+            key={item.label}
+            item={item}
+            active={isNavItemActive(pathname, item.href)}
+            onNavigate={onNavigate}
+          />
         ))}
       </nav>
     </div>

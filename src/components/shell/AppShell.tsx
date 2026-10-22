@@ -1,38 +1,18 @@
 import { ROLE_LABELS, can } from '@/server/authz/permissions';
 import type { PublicUser } from '@/server/users/dto';
 import { PRIMARY_NAV, SETTINGS_NAV } from './navigation';
-import { SignOutButton } from './SignOutButton';
-import { CrmIcon } from '@/components/crm/CrmIcon';
-import Link from 'next/link';
-
-function initials(displayName: string): string {
-  return displayName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-}
+import { SidebarNav } from './SidebarNav';
+import { MobileNav } from './MobileNav';
+import { BrandBlock, UserCard } from './SidebarChrome';
 
 export function AppShell({ user, children }: { user: PublicUser; children: React.ReactNode }) {
   // Only nav entries the signed-in role may actually reach are rendered.
+  const primaryNav = PRIMARY_NAV.filter(
+    (item) => !item.permission || can(user.role, item.permission),
+  );
   const settingsNav = SETTINGS_NAV.filter(
     (item) => !item.permission || can(user.role, item.permission),
   );
-
-  const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'opportunities' | 'followups' | 'quotation' | 'reports' | 'team' | 'settings'> = {
-    Home: 'home',
-    Leads: 'leads',
-    Customers: 'customers',
-    Pipeline: 'pipeline',
-    Opportunities: 'opportunities',
-    'Follow-ups': 'followups',
-    Quotations: 'quotation',
-    Reports: 'reports',
-    Team: 'team',
-    Settings: 'settings',
-    Users: 'settings',
-  };
 
   return (
     // print:static/print:overflow-visible: the CRM shell is fixed and scrollable,
@@ -40,78 +20,26 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
     // chrome itself is hidden in print; the document flows normally.
     <div className="fixed inset-0 z-[100] flex overflow-hidden bg-[#f4f6f8] text-[#17212b] print:static print:overflow-visible print:bg-white">
       <aside className="hidden w-[252px] shrink-0 flex-col bg-[#101c24] text-white lg:flex print:hidden">
-        <div className="flex h-[76px] items-center gap-3 border-b border-white/[0.07] px-6">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#18b6a4] shadow-[0_8px_24px_rgba(24,182,164,0.22)]">
-            <span className="text-lg font-bold tracking-[-0.08em]">DH</span>
-          </div>
-          <div>
-            <p className="text-[15px] font-semibold tracking-[-0.02em]">Dental Hub</p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">Sales CRM</p>
-          </div>
-        </div>
+        <BrandBlock />
 
         <div className="px-4 pt-6">
-          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Workspace</p>
-          <nav className="space-y-1" aria-label="CRM navigation">
-            {PRIMARY_NAV.filter((item) => !item.permission || can(user.role, item.permission)).map((item) => {
-              const Icon = navIcons[item.label] || 'home';
-              if (item.status !== 'available' || !item.href) {
-                return (
-                  <span key={item.label} aria-disabled="true" className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-white/28">
-                    <CrmIcon name={Icon} className="h-[18px] w-[18px]" />
-                    {item.label}
-                    <span className="ml-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">Soon</span>
-                  </span>
-                );
-              }
-              return (
-                <Link key={item.label} href={item.href} className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition text-white/62 hover:bg-white/[0.06] hover:text-white">
-                  <CrmIcon name={Icon} className="h-[18px] w-[18px] text-white/42 group-hover:text-white/70" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <p className="mb-2 mt-8 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">Settings</p>
-          <nav className="space-y-1" aria-label="CRM settings navigation">
-            {settingsNav.map((item) => {
-              const Icon = navIcons[item.label] || 'settings';
-              if (item.status !== 'available' || !item.href) {
-                return (
-                  <span key={item.label} aria-disabled="true" className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-white/28">
-                    <CrmIcon name={Icon} className="h-[18px] w-[18px]" />
-                    {item.label}
-                    <span className="ml-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">Soon</span>
-                  </span>
-                );
-              }
-              return (
-                <Link key={item.label} href={item.href} className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition text-white/62 hover:bg-white/[0.06] hover:text-white">
-                  <CrmIcon name={Icon} className="h-[18px] w-[18px] text-white/42 group-hover:text-white/70" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <SidebarNav title="Workspace" items={primaryNav} ariaLabel="CRM navigation" />
+          <SidebarNav title="Settings" items={settingsNav} ariaLabel="CRM settings navigation" />
         </div>
 
-        <div className="mx-4 mb-4 mt-auto rounded-xl bg-white/[0.055] p-3.5 ring-1 ring-white/[0.07]">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#d8f5f1] text-xs font-bold text-[#087f73]">{initials(user.displayName)}</span>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-white">{user.displayName}</p>
-              <p className="mt-0.5 text-[10px] text-white/40">{ROLE_LABELS[user.role]}</p>
-            </div>
-            <SignOutButton />
-          </div>
-        </div>
+        <UserCard displayName={user.displayName} roleLabel={ROLE_LABELS[user.role]} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col print:block">
         <header className="flex h-[76px] shrink-0 items-center gap-5 border-b border-[#dfe5e8] bg-white/95 px-5 backdrop-blur-xl xl:px-8 print:hidden">
           {/* No global search or notifications in this slice: both were dead
               controls and have been removed rather than left faked. */}
+          <MobileNav
+            primaryNav={primaryNav}
+            settingsNav={settingsNav}
+            displayName={user.displayName}
+            roleLabel={ROLE_LABELS[user.role]}
+          />
           <div className="ml-auto flex items-center gap-2.5">
             <div className="hidden text-right sm:block">
               <p className="text-xs font-semibold text-[#26323b]">{user.displayName}</p>
@@ -120,7 +48,7 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
+        <main data-shell-scroll className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
           <div className="mx-auto w-full max-w-[1680px] px-5 py-6 xl:px-8 xl:py-7 print:max-w-none print:p-0">{children}</div>
         </main>
       </div>
