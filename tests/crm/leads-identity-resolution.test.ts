@@ -9,7 +9,7 @@ import {
   resolveOrCreateContact,
   IdentityConflictError,
 } from '../../src/server/crm/leads/repository';
-import { normalisePhoneToE164 } from '../../src/server/crm/contacts/phone';
+import { InvalidPhoneError, normalisePhoneToE164 } from '../../src/server/crm/contacts/phone';
 import { normaliseEmail } from '../../src/server/users/repository';
 
 let db: Client;
@@ -34,11 +34,22 @@ describe('identity resolution', () => {
       expect(normalisePhoneToE164('0020 101 234 5678')).toBe(canonical);
       expect(normalisePhoneToE164('201012345678')).toBe(canonical);
       expect(normalisePhoneToE164('10 1234 5678')).toBe(canonical);
+      expect(normalisePhoneToE164('٠١٠١٢٣٤٥٦٧٨')).toBe(canonical);
+      expect(normalisePhoneToE164('۰۱۰۱۲۳۴۵۶۷۸')).toBe(canonical);
+      expect(normalisePhoneToE164('\u200F01012345678')).toBe(canonical);
+      expect(normalisePhoneToE164('\u202A\u206601012345678\u2069\u202C')).toBe(canonical);
     });
 
     it('normalizes Cairo landline', () => {
       expect(normalisePhoneToE164('02 2345 6789')).toBe('+20223456789');
       expect(normalisePhoneToE164('20223456789')).toBe('+20223456789');
+      expect(normalisePhoneToE164('03 4567890')).toBe('+2034567890');
+    });
+
+    it('rejects invalid Egyptian national numbers', () => {
+      for (const bad of ['1001234', '0100123456789', '01312345678', '0101234567']) {
+        expect(() => normalisePhoneToE164(bad)).toThrow(InvalidPhoneError);
+      }
     });
 
     it('passes through international non-Egyptian numbers', () => {
