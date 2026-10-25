@@ -6,11 +6,12 @@ import { z } from 'zod';
 import { db } from '@/server/db/client';
 import { assertPermission } from '@/server/auth/dal';
 import { ROLES } from '@/server/authz/permissions';
-import type { AdminFormState } from '@/server/auth/form-state';
+import { MIN_PASSWORD_LENGTH, type AdminFormState } from '@/server/auth/form-state';
 import {
   DuplicateEmailError,
   LastActiveAdminError,
   createUser,
+  resetUserPassword,
   setUserActive,
   setUserRole,
 } from './repository';
@@ -32,6 +33,14 @@ const roleSchema = z.object({
 const activeSchema = z.object({
   userId: z.uuid(),
   isActive: z.enum(['true', 'false']).transform((value) => value === 'true'),
+});
+
+const resetPasswordSchema = z.object({
+  userId: z.uuid(),
+  newPassword: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`)
+    .max(512),
 });
 
 function firstIssue(error: z.ZodError): string {
@@ -109,4 +118,27 @@ export async function setUserActiveAction(
   } catch (error) {
     return toFormError(error);
   }
+}
+
+export async function resetUserPasswordAction(
+  _prevState: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  const session = await assertPermission('users:manage');
+
+  const parsed = resetPasswordSchema.safeParse({
+    userId: formData.get('userId'),
+    newPassword: formData.get('newPassword'),
+  });
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+
+  // Your own password goes through Settings → Password, which asks for the current one.
+  if (parsed.data.userId === session.user.id) {
+    return { error: 'Change your own password from Settings → Password.' };
+  }
+
+  const user = await resetUserPassword(db(), parsed.data.userId, parsed.data.newPassword);
+  return {
+    success: `New password set for ${user.displayName}. They have been signed out everywhere.`,
+  };
 }

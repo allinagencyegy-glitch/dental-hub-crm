@@ -217,6 +217,45 @@ export async function changeUserPassword(
   }
 }
 
+/**
+ * An admin sets a new password for someone who forgot theirs. Every session the
+ * user holds is revoked and their sign-in throttle is cleared, in one
+ * transaction, so the new password works straight away and nowhere else stays
+ * signed in on the old one.
+ */
+export async function resetUserPassword(
+  db: Db,
+  userId: string,
+  newPassword: string,
+): Promise<PublicUser> {
+  // Hashed before the transaction opens so no row is locked during argon2.
+  const passwordHash = await hashPassword(newPassword);
+  const { client, release } = await beginTransaction(db);
+
+  try {
+    const { rows } = await client.query<UserRow>(
+      `UPDATE crm_user SET password_hash = $2, updated_at = now() WHERE id = $1
+       RETURNING ${USER_COLUMNS}`,
+      [userId, passwordHash],
+    );
+    if (!rows[0]) throw new Error('User not found.');
+
+    await client.query(
+      'UPDATE crm_session SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId],
+    );
+    await client.query('DELETE FROM crm_login_throttle WHERE email = $1', [rows[0].email]);
+
+    await commitTransaction(client);
+    return toPublicUser(rows[0]);
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    release();
+  }
+}
+
 export async function countActiveAdmins(db: Db): Promise<number> {
   const { rows } = await db.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM crm_user WHERE role = 'ADMIN' AND is_active = true",

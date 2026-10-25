@@ -1,12 +1,16 @@
 'use client';
 
 import { useActionState } from 'react';
-import { changeUserRoleAction, setUserActiveAction } from '@/server/users/admin-actions';
-import { EMPTY_ADMIN_STATE } from '@/server/auth/form-state';
+import {
+  changeUserRoleAction,
+  resetUserPasswordAction,
+  setUserActiveAction,
+} from '@/server/users/admin-actions';
+import { EMPTY_ADMIN_STATE, MIN_PASSWORD_LENGTH } from '@/server/auth/form-state';
 import { ROLES, ROLE_LABELS } from '@/server/authz/permissions';
 import type { PublicUser } from '@/server/users/dto';
 
-export function UserRowActions({ user }: { user: PublicUser }) {
+export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boolean }) {
   const [roleState, roleAction, rolePending] = useActionState(
     changeUserRoleAction,
     EMPTY_ADMIN_STATE,
@@ -15,8 +19,12 @@ export function UserRowActions({ user }: { user: PublicUser }) {
     setUserActiveAction,
     EMPTY_ADMIN_STATE,
   );
+  const [resetState, resetAction, resetPending] = useActionState(
+    resetUserPasswordAction,
+    EMPTY_ADMIN_STATE,
+  );
 
-  const error = roleState.error ?? activeState.error;
+  const error = roleState.error ?? activeState.error ?? resetState.error;
 
   return (
     <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -64,6 +72,43 @@ export function UserRowActions({ user }: { user: PublicUser }) {
         </form>
       </div>
 
+      {/* Your own password is changed from Settings → Password instead. */}
+      {isSelf ? null : (
+        <details className="text-[11px] sm:text-right">
+          <summary className="cursor-pointer font-semibold text-[#53616b] hover:text-[#17242c]">
+            Reset password
+          </summary>
+          <form action={resetAction} className="mt-2 flex items-center gap-2">
+            <input type="hidden" name="userId" value={user.id} />
+            <label htmlFor={`password-${user.id}`} className="sr-only">
+              New password for {user.displayName}
+            </label>
+            <input
+              id={`password-${user.id}`}
+              name="newPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={MIN_PASSWORD_LENGTH}
+              placeholder={`New password (${MIN_PASSWORD_LENGTH}+ characters)`}
+              className="h-8 w-52 rounded-lg border border-[#dfe4e7] bg-white px-2 text-[11px] text-[#17242c] outline-none focus:border-[#18b6a4]"
+            />
+            <button
+              type="submit"
+              disabled={resetPending}
+              className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
+            >
+              {resetPending ? 'Saving...' : 'Set password'}
+            </button>
+          </form>
+        </details>
+      )}
+
+      {resetState.success ? (
+        <p role="status" className="text-[11px] font-semibold text-[#14815f]">
+          {resetState.success}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-[11px] font-semibold text-[#c43f47]">
           {error}
