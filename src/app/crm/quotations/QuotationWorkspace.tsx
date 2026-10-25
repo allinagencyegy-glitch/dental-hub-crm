@@ -373,7 +373,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
           </p>
           <p className="mt-1 text-[10px] text-[#6c7a83]">
             {isRevisionAllowed(quotation.status)
-              ? 'A committed quotation is never edited in place — create a revision to make a new offer. The original stays on the record exactly as it was.'
+              ? 'A sent quotation cannot be edited. Create a revision to make a new offer; the original stays on record exactly as it was sent.'
               : 'An accepted quotation is final. Close the deal as won from the opportunity page.'}
           </p>
         </div>
@@ -599,7 +599,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
               <div className="border-b border-[#e7ebed] px-5 py-4">
                 <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Version history</h2>
                 <p className="mt-0.5 text-[10px] text-[#8a959d]">
-                  Immutable snapshots of this document at every change
+                  A saved copy of this quotation at every change
                 </p>
               </div>
               {snapshots.length === 0 ? (
@@ -663,8 +663,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
             </div>
             {editing ? (
               <p className="mt-3 text-[9px] leading-4 text-[#98a2a9]">
-                Totals are recalculated by the server from the line items — what you see here is
-                a preview.
+                This is a preview. Totals are recalculated from the line items when you save.
               </p>
             ) : null}
           </section>

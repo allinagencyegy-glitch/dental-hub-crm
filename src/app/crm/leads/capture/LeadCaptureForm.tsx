@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { captureLeadAction } from '@/server/crm/leads/actions';
+import { ROLE_LABELS, isRole } from '@/server/authz/permissions';
 
 interface SourceOption {
   id: string;
@@ -167,7 +168,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
       <PageHeader
         eyebrow="Lead management"
         title="Capture new lead"
-        description="Record an inbound inquiry. The contact will be resolved or created automatically."
+        description="Record a new inquiry. If the phone or email already belongs to a contact, the lead is added to them."
       />
 
       {error && (
@@ -237,7 +238,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
               {fieldErrors.email && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors.email}</p>}
             </div>
           </div>
-          <p className="text-[10px] text-[#8a959d]">Phone and email are used to resolve or create the contact. At least one is required.</p>
+          <p className="text-[10px] text-[#8a959d]">Phone and email are used to find an existing contact. At least one is required.</p>
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
@@ -335,7 +336,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 ) : (
                   assignableOwners.map((owner) => (
                     <option key={owner.id} value={owner.id}>
-                      {owner.displayName} ({owner.role})
+                      {owner.displayName} ({isRole(owner.role) ? ROLE_LABELS[owner.role] : owner.role})
                     </option>
                   ))
                 )}

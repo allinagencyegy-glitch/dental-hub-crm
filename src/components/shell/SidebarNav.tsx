@@ -37,7 +37,7 @@ function NavLink({
     return (
       <span
         aria-disabled="true"
-        title="Not yet implemented"
+        title="Coming soon"
         className="flex cursor-not-allowed select-none items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-white/28"
       >
         <CrmIcon name={Icon} className="h-[18px] w-[18px]" />

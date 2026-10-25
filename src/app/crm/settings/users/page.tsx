@@ -19,7 +19,7 @@ export default async function UsersSettingsPage() {
       <PageHeader
         eyebrow="Settings"
         title="Users"
-        description="Internal Dental Hub staff accounts. Foundation v0 supports listing, creating, role changes and activation."
+        description="Dental Hub staff accounts. Add people, change their role, and deactivate anyone who leaves."
       />
 
       {mayManage ? (
