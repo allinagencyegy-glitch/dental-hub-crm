@@ -14,7 +14,7 @@ import {
   sendQuotationAction,
   updateDraftQuotationAction,
 } from '@/server/crm/quotations/actions';
-import { QUOTATION_STATUS_LABELS } from '@/server/crm/quotations/status';
+import { QUOTATION_STATUS_LABELS, isRevisionAllowed } from '@/server/crm/quotations/status';
 import type { QuotationDetail, QuotationRevisionSnapshot } from '@/server/crm/quotations/repository';
 import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/opportunities/repository';
 
@@ -372,8 +372,9 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
             {quotation.expiredAt ? ` Expired on ${quotation.expiredAt.toLocaleDateString()}.` : null}
           </p>
           <p className="mt-1 text-[10px] text-[#6c7a83]">
-            A committed quotation is never edited in place — create a revision to make a new
-            offer. The original stays on the record exactly as it was.
+            {isRevisionAllowed(quotation.status)
+              ? 'A committed quotation is never edited in place — create a revision to make a new offer. The original stays on the record exactly as it was.'
+              : 'An accepted quotation is final. Close the deal as won from the opportunity page.'}
           </p>
         </div>
       ) : null}
@@ -762,7 +763,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
                     </>
                   ) : null}
 
-                  {quotation && quotation.status !== 'DRAFT' ? (
+                  {quotation && isRevisionAllowed(quotation.status) ? (
                     <button
                       type="button"
                       disabled={busy}

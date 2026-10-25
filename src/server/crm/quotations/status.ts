@@ -37,10 +37,13 @@ export function canTransition(from: QuotationStatus, to: QuotationStatus): boole
 }
 
 /**
- * A revision may start from any committed document - a sent, decided or
- * expired quotation can all be superseded by a new draft. A draft is simply
- * edited in place instead.
+ * A revision may start from a sent, rejected or expired quotation: each can be
+ * superseded by a new draft. A draft is simply edited in place instead.
+ *
+ * An ACCEPTED quotation is final. An opportunity holds at most one accepted
+ * quotation (migration 0011), so a revision of it could never be accepted;
+ * offering one would only produce a dead document.
  */
 export function isRevisionAllowed(status: QuotationStatus): boolean {
-  return status !== 'DRAFT';
+  return status !== 'DRAFT' && status !== 'ACCEPTED';
 }
