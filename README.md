@@ -88,6 +88,7 @@ refuse to run when `NODE_ENV=production`.
 | `npm run db:migrate` | Apply pending migrations (safe to re-run) |
 | `npm run db:seed` | Create the development accounts if absent (never resets a password) |
 | `npm run db:seed:acceptance` | Create sample leads, an opportunity and follow-ups in the local `dental_hub_crm` database only |
+| `npm run admin:create` | Create the first real admin account, production included (asks for name, email and password) |
 | `npm run test:crm` | Domain suite: migrations, constraints, repositories and use cases |
 | `npm run test:foundation` | Production build, then sign-in, sessions and HTTP acceptance against a real server |
 
@@ -119,8 +120,13 @@ production setup still needs:
 
 - a host for the Node.js server and a managed PostgreSQL database with backups;
 - a domain with HTTPS (the session cookie is `Secure` in production);
-- `npm run db:migrate` against the production database, then real accounts for
-  the team created from **Users**. Do not run either seed script there.
+- `npm run db:migrate` against the production database, then
+  `npm run admin:create` once on the server to make the first admin. That admin
+  signs in and adds the rest of the team from **Settings → Users**. Do not run
+  either seed script there.
+
+`admin:create` refuses while an active admin already exists. If every admin is
+locked out, `npm run admin:create -- --force` adds another one.
 
 ## Known environment constraint
 
