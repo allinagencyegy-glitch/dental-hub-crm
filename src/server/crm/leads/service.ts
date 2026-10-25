@@ -29,6 +29,7 @@ import {
   linkContactToAccount,
 } from '@/server/crm/accounts/repository';
 import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
+import { notify, notifyLeadReceived } from '@/server/crm/notifications/repository';
 import { findSourceByCode, listSourceCampaigns, findProductCategoryByCode, listProductCategories, listSources } from '@/server/crm/catalog/repository';
 import { findUserById, listUsers } from '@/server/users/repository';
 
@@ -174,6 +175,10 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
       note: input.note ?? null,
       ownerUserId,
     });
+
+    // The owner hears the lead is theirs; managers hear a lead arrived.
+    await notify(client, { recipientUserId: ownerUserId, kind: 'LEAD_ASSIGNED', actorUserId: actor.userId, leadId: lead.id });
+    await notifyLeadReceived(client, { leadId: lead.id, ownerUserId, actorUserId: actor.userId });
 
     await client.query('COMMIT');
     return { ok: true, leadId: lead.id };

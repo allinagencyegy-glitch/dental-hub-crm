@@ -21,6 +21,7 @@
 import type { Db } from '@/server/db/types';
 import { Pool, PoolClient } from 'pg';
 import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
+import { notify } from '@/server/crm/notifications/repository';
 import { likePattern } from '@/server/db/like';
 import { normaliseEmail } from '@/server/users/repository';
 import { normalisePhoneToE164 } from '@/server/crm/contacts/phone';
@@ -944,6 +945,12 @@ export async function updateLead(
         input.ownerUserId !== lead.ownerUserId
       ) {
         await reassignPendingLeadFollowUps(client, leadId, input.ownerUserId);
+        await notify(client, {
+          recipientUserId: input.ownerUserId,
+          kind: 'LEAD_ASSIGNED',
+          actorUserId: actor.userId,
+          leadId,
+        });
       }
 
       await client.query('COMMIT');

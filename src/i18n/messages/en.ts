@@ -871,6 +871,30 @@ export const en = {
     footnote:
       'Figures marked “Right now” ignore the selected period. The others count what happened in it: leads by the day they arrived, deals by the day they were won or lost, quotations by the day they were sent, accepted or rejected, and follow-ups by the day they were completed. Team totals include only the people whose work you can see.',
   },
+  notifications: {
+    title: 'Notifications',
+    open: 'Notifications',
+    openWithCount: (count: number) => `Notifications, ${count} new`,
+    markAllRead: 'Mark all as read',
+    empty: 'Nothing new. Work handed to you will show up here.',
+    loadFailed: 'Notifications could not be loaded.',
+    overdue: (count: number) => `${count} overdue follow-up${count === 1 ? '' : 's'}`,
+    dueToday: (count: number) => `${count} due today`,
+    openFollowUps: 'Open follow-ups',
+    someone: 'Someone',
+    aCustomer: 'a customer',
+    kinds: {
+      LEAD_RECEIVED: (actor: string, customer: string) => `New lead: ${customer}, entered by ${actor}`,
+      LEAD_ASSIGNED: (actor: string, customer: string) => `${actor} gave you the lead ${customer}`,
+      OPPORTUNITY_ASSIGNED: (actor: string, customer: string) => `${actor} gave you the opportunity ${customer}`,
+      FOLLOW_UP_ASSIGNED: (actor: string, action: string, customer: string, due: string) =>
+        `${actor} gave you a follow-up: ${action} with ${customer}, due ${due}`,
+      QUOTATION_ACCEPTED: (actor: string, quoteNumber: string, customer: string) =>
+        `Quotation ${quoteNumber} for ${customer} was accepted, recorded by ${actor}`,
+      QUOTATION_REJECTED: (actor: string, quoteNumber: string, customer: string) =>
+        `Quotation ${quoteNumber} for ${customer} was rejected, recorded by ${actor}`,
+    },
+  },
 };
 
 export type Messages = typeof en;

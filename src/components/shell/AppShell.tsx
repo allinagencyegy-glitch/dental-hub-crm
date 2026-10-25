@@ -6,6 +6,7 @@ import { SidebarNav } from './SidebarNav';
 import { MobileNav } from './MobileNav';
 import { BrandBlock, UserCard } from './SidebarChrome';
 import { LanguageSwitch } from './LanguageSwitch';
+import { NotificationBell } from './NotificationBell';
 
 export async function AppShell({ user, children }: { user: PublicUser; children: React.ReactNode }) {
   const m = await getMessages();
@@ -36,15 +37,15 @@ export async function AppShell({ user, children }: { user: PublicUser; children:
 
       <div className="flex min-w-0 flex-1 flex-col print:block">
         <header className="flex h-[76px] shrink-0 items-center gap-5 border-b border-[#dfe5e8] bg-white/95 px-5 backdrop-blur-xl xl:px-8 print:hidden">
-          {/* No global search or notifications in this slice: both were dead
-              controls and have been removed rather than left faked. */}
+          {/* No global search yet: a dead control is removed rather than faked. */}
           <MobileNav
             primaryNav={primaryNav}
             settingsNav={settingsNav}
             displayName={user.displayName}
             roleLabel={roleLabel}
           />
-          <div className="ms-auto flex items-center gap-4">
+          <div className="ms-auto flex items-center gap-3 sm:gap-4">
+            <NotificationBell />
             <LanguageSwitch className="h-8 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]" />
             <div className="hidden text-end sm:block">
               <p className="text-xs font-semibold text-[#26323b]">{user.displayName}</p>

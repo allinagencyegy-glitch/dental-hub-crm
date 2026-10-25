@@ -13,6 +13,7 @@ import {
   rollbackTransaction,
 } from '@/server/db/transaction';
 import { likePattern } from '@/server/db/like';
+import { notify } from '@/server/crm/notifications/repository';
 import {
   canTransition,
   isOpportunityStage,
@@ -912,6 +913,15 @@ export async function reassignOpportunityOwner(
     },
     actorUserId: actor.userId,
   });
+
+  if (existing.ownerUserId !== newOwnerUserId) {
+    await notify(db, {
+      recipientUserId: newOwnerUserId,
+      kind: 'OPPORTUNITY_ASSIGNED',
+      actorUserId: actor.userId,
+      opportunityId,
+    });
+  }
 
   return toOpportunity(rows[0]);
 }

@@ -18,6 +18,7 @@ import {
   rollbackTransaction,
 } from '@/server/db/transaction';
 import { recordOpportunityActivity } from './repository';
+import { notify } from '@/server/crm/notifications/repository';
 import {
   isFollowUpActionType,
   ACTION_TYPE_LABELS,
@@ -222,6 +223,14 @@ export async function createFollowUp(
         actorUserId: input.actorUserId ?? input.ownerUserId,
       });
     }
+
+    // Only work handed to someone else is news; scheduling for yourself is not.
+    await notify(client, {
+      recipientUserId: input.ownerUserId,
+      kind: 'FOLLOW_UP_ASSIGNED',
+      actorUserId: input.actorUserId ?? input.ownerUserId,
+      followUpId: followUp.id,
+    });
 
     await commitTransaction(client);
     return followUp;
@@ -776,4 +785,31 @@ export async function countFollowUpsByWindow(
     upcoming: Number(rows[0].upcoming),
     completed: Number(rows[0].completed),
   };
+}
+
+/**
+ * The bell's reminder: a person's OWN pending actions that are overdue or due
+ * later today, on open parents only. Unlike the queue counts this is never
+ * widened by role - a manager is reminded of the work assigned to them, not of
+ * the whole team's.
+ */
+export async function countOwnDueFollowUps(
+  db: Db,
+  userId: string,
+): Promise<{ overdue: number; today: number }> {
+  const { rows } = await db.query<{ overdue: string; today: string }>(
+    `SELECT
+       count(*) FILTER (WHERE f.due_at < now())::text AS overdue,
+       count(*) FILTER (
+         WHERE f.due_at >= now() AND f.due_at < ${START_OF_TOMORROW_CAIRO_SQL}
+       )::text AS today
+     FROM crm_followup f
+     LEFT JOIN crm_opportunity o ON o.id = f.opportunity_id
+     LEFT JOIN crm_lead l        ON l.id = f.lead_id
+     WHERE f.owner_user_id = $1
+       AND f.completed_at IS NULL
+       AND ${OPEN_PARENT}`,
+    [userId],
+  );
+  return { overdue: Number(rows[0].overdue), today: Number(rows[0].today) };
 }
