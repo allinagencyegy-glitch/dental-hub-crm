@@ -704,6 +704,9 @@ describe('pipeline + management dashboard', () => {
       expect(phone?.leads).toBe(1);
       expect(phone?.wins).toBe(1);
       expect(phone?.wonValue).toBe(100000);
+      // The code is what the page translates the source name by.
+      expect(website?.code).toBe('website');
+      expect(phone?.code).toBe('phone');
     });
   });
 

@@ -12,14 +12,6 @@
 export const QUOTATION_STATUSES = ['DRAFT', 'SENT', 'ACCEPTED', 'REJECTED', 'EXPIRED'] as const;
 export type QuotationStatus = (typeof QUOTATION_STATUSES)[number];
 
-export const QUOTATION_STATUS_LABELS: Record<QuotationStatus, string> = {
-  DRAFT: 'Draft',
-  SENT: 'Sent',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  EXPIRED: 'Expired',
-};
-
 export function isQuotationStatus(value: unknown): value is QuotationStatus {
   return typeof value === 'string' && (QUOTATION_STATUSES as readonly string[]).includes(value);
 }

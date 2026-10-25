@@ -40,7 +40,7 @@ function getDb(db?: Db): Db {
   return db ?? defaultDb();
 }
 
-type FailureCode =
+export type FailureCode =
   | 'VALIDATION'
   | 'UNAUTHORISED'
   | 'NOT_FOUND'
@@ -50,7 +50,32 @@ type FailureCode =
   | 'ALREADY_ACCEPTED'
   | 'INTERNAL';
 
-type Failure = { ok: false; error: FailureCode; message: string };
+/** Which rule a VALIDATION failure broke, so the reader can be told which one. */
+export type QuotationProblem =
+  | 'ITEMS_REQUIRED'
+  | 'TOO_MANY_ITEMS'
+  | 'DESCRIPTION_REQUIRED'
+  | 'DESCRIPTION_TOO_LONG'
+  | 'QUANTITY_NOT_POSITIVE'
+  | 'UNIT_PRICE_NEGATIVE'
+  | 'DISCOUNT_NEGATIVE'
+  | 'TAX_NEGATIVE'
+  | 'VALID_UNTIL_UNREADABLE'
+  | 'DISCOUNT_EXCEEDS_SUBTOTAL'
+  | 'UNKNOWN_STATUS';
+
+type Failure = {
+  ok: false;
+  error: FailureCode;
+  message: string;
+  problem?: QuotationProblem;
+  /** On ALREADY_ACCEPTED: the quotation that holds the acceptance. */
+  acceptedQuoteNumber?: string;
+};
+
+function invalid(problem: QuotationProblem, message: string): Failure {
+  return { ok: false, error: 'VALIDATION', message, problem };
+}
 
 export type QuotationCommercialInput = {
   items: QuotationItemInput[];
@@ -70,42 +95,42 @@ const MAX_ITEM_DESCRIPTION_LENGTH = 2000;
  */
 function validateCommercialInput(input: QuotationCommercialInput): Failure | null {
   if (!Array.isArray(input.items) || input.items.length === 0) {
-    return { ok: false, error: 'VALIDATION', message: 'At least one line item is required.' };
+    return invalid('ITEMS_REQUIRED', 'At least one line item is required.');
   }
   if (input.items.length > 200) {
-    return { ok: false, error: 'VALIDATION', message: 'A quotation can hold at most 200 line items.' };
+    return invalid('TOO_MANY_ITEMS', 'A quotation can hold at most 200 line items.');
   }
 
   for (const item of input.items) {
     if (!item || typeof item.description !== 'string' || item.description.trim() === '') {
-      return { ok: false, error: 'VALIDATION', message: 'Every line item needs a description.' };
+      return invalid('DESCRIPTION_REQUIRED', 'Every line item needs a description.');
     }
     if (item.description.trim().length > MAX_ITEM_DESCRIPTION_LENGTH) {
-      return { ok: false, error: 'VALIDATION', message: 'A line item description is too long.' };
+      return invalid('DESCRIPTION_TOO_LONG', 'A line item description is too long.');
     }
     if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) {
-      return { ok: false, error: 'VALIDATION', message: 'Every line item needs a quantity greater than zero.' };
+      return invalid('QUANTITY_NOT_POSITIVE', 'Every line item needs a quantity greater than zero.');
     }
     if (typeof item.unitPrice !== 'number' || !Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
-      return { ok: false, error: 'VALIDATION', message: 'Unit prices cannot be negative.' };
+      return invalid('UNIT_PRICE_NEGATIVE', 'Unit prices cannot be negative.');
     }
   }
 
   if (input.discountAmount !== undefined && input.discountAmount !== null) {
     if (typeof input.discountAmount !== 'number' || !Number.isFinite(input.discountAmount) || input.discountAmount < 0) {
-      return { ok: false, error: 'VALIDATION', message: 'Discount cannot be negative.' };
+      return invalid('DISCOUNT_NEGATIVE', 'Discount cannot be negative.');
     }
   }
   if (input.taxAmount !== undefined && input.taxAmount !== null) {
     if (typeof input.taxAmount !== 'number' || !Number.isFinite(input.taxAmount) || input.taxAmount < 0) {
-      return { ok: false, error: 'VALIDATION', message: 'Tax cannot be negative.' };
+      return invalid('TAX_NEGATIVE', 'Tax cannot be negative.');
     }
   }
 
   if (input.validUntil !== undefined && input.validUntil !== null) {
     const parsed = new Date(input.validUntil);
     if (Number.isNaN(parsed.getTime())) {
-      return { ok: false, error: 'VALIDATION', message: 'The valid-until date could not be read.' };
+      return invalid('VALID_UNTIL_UNREADABLE', 'The valid-until date could not be read.');
     }
   }
 
@@ -126,11 +151,16 @@ function mapWriteFailure(error: unknown): Failure {
     return { ok: false, error: 'NOT_DRAFT', message: error.message };
   }
   if (error instanceof QuotationAlreadyAcceptedError) {
-    return { ok: false, error: 'ALREADY_ACCEPTED', message: error.message };
+    return {
+      ok: false,
+      error: 'ALREADY_ACCEPTED',
+      message: error.message,
+      acceptedQuoteNumber: error.acceptedQuoteNumber,
+    };
   }
-  if (error instanceof InvalidQuotationItemsError || error instanceof InvalidQuotationAmountsError) {
-    return { ok: false, error: 'VALIDATION', message: error.message };
-  }
+  // The repository re-checks two rules inside the transaction.
+  if (error instanceof InvalidQuotationItemsError) return invalid('ITEMS_REQUIRED', error.message);
+  if (error instanceof InvalidQuotationAmountsError) return invalid('DISCOUNT_EXCEEDS_SUBTOTAL', error.message);
   if (error instanceof Error && error.message === 'UNAUTHORISED') {
     return { ok: false, error: 'UNAUTHORISED', message: 'You cannot perform this action.' };
   }
@@ -241,7 +271,7 @@ export async function transitionQuotationUseCase(
   const database = getDb(db);
 
   if (!isQuotationStatus(to)) {
-    return { ok: false, error: 'VALIDATION', message: 'Unknown quotation status.' };
+    return invalid('UNKNOWN_STATUS', 'Unknown quotation status.');
   }
 
   try {

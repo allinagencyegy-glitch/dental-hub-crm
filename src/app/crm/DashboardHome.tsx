@@ -6,50 +6,18 @@ import { CrmIcon, type CrmIconName } from '@/components/crm/CrmIcon';
 import {
   getDashboardAction,
 } from '@/server/crm/dashboard/actions';
-import {
-  DASHBOARD_RANGE_LABELS,
-  type DashboardRange,
-} from '@/server/crm/dashboard/dates';
+import { DASHBOARD_RANGES, type DashboardRange } from '@/server/crm/dashboard/dates';
 import type { DashboardPayload } from '@/server/crm/dashboard/service';
-import { STAGE_LABELS, OPPORTUNITY_STAGES } from '@/server/crm/opportunities/stage';
+import { OPPORTUNITY_STAGES } from '@/server/crm/opportunities/stage';
+import { useFormatters, useMessages } from '@/i18n/I18nProvider';
+import { catalogLabel } from '@/i18n/format';
 
 type Role = 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
-
-function formatEgp(value: number): string {
-  return value.toLocaleString('en-EG', {
-    style: 'currency',
-    currency: 'EGP',
-    maximumFractionDigits: 0,
-  });
-}
-
-function formatCount(value: number): string {
-  return value.toLocaleString('en-EG');
-}
-
-const RANGE_OPTIONS: DashboardRange[] = ['last7', 'last30', 'thisMonth', 'custom'];
-
-const FUNNEL_LABELS: Record<string, string> = {
-  leads: 'Leads received',
-  qualified: 'Qualified',
-  won: 'Won',
-};
-
-const QUOTATION_FUNNEL_LABELS: Record<string, string> = {
-  quoted: 'Quotation sent',
-  accepted: 'Quotation accepted',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  NEW: 'New',
-  CONTACTED: 'Contacted',
-  DISQUALIFIED: 'Disqualified',
-};
 
 interface DashboardHomeProps {
   initial: DashboardPayload;
   ownerOptions: { id: string; displayName: string }[];
-  sourceOptions: { id: string; name: string }[];
+  sourceOptions: { id: string; code: string; name: string }[];
   userRole: Role;
   initialRange: DashboardRange;
   initialOwner: string;
@@ -73,6 +41,11 @@ export function DashboardHome({
   const [endDate, setEndDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const m = useMessages();
+  const f = useFormatters();
+  const t = m.dashboard;
+  const formatEgp = f.currency;
+  const formatCount = f.number;
 
   const canFilterOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
 
@@ -95,7 +68,7 @@ export function DashboardHome({
       });
       setPayload(result);
     } catch {
-      setError('The dashboard could not be refreshed.');
+      setError(t.refreshFailed);
     } finally {
       setBusy(false);
     }
@@ -109,8 +82,8 @@ export function DashboardHome({
   const { overview } = payload;
   const rangeLabel =
     range === 'custom' && startDate && endDate
-      ? `${startDate} → ${endDate}`
-      : DASHBOARD_RANGE_LABELS[range];
+      ? t.customRange(startDate, endDate)
+      : t.ranges[range];
 
   const funnelTotal = payload.funnel[0]?.count ?? 0;
   const percent = (count: number) => (funnelTotal === 0 ? 0 : Math.round((count / funnelTotal) * 100));
@@ -122,21 +95,19 @@ export function DashboardHome({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#18a897]">
-            Sales management
+            {t.eyebrow}
           </p>
           <h1 className="text-[26px] font-semibold tracking-[-0.035em] text-[#16232c]">
-            {userRole === 'SALES_REP' ? 'My sales dashboard' : 'Sales dashboard'}
+            {userRole === 'SALES_REP' ? t.headingRep : t.heading}
           </h1>
-          <p className="mt-1 text-[12px] text-[#75828c]">
-            Period metrics cover {rangeLabel}; everything marked “right now” is a live snapshot.
-          </p>
+          <p className="mt-1 text-[12px] text-[#75828c]">{t.periodNote(rangeLabel)}</p>
         </div>
         <Link
           href="/crm/pipeline"
           className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#132932] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1b3944]"
         >
           <CrmIcon name="pipeline" className="h-4 w-4" />
-          Open pipeline
+          {t.openPipeline}
         </Link>
       </div>
 
@@ -149,7 +120,7 @@ export function DashboardHome({
       {/* Filters */}
       <div className="mt-5 flex flex-wrap items-center gap-2 rounded-xl bg-white p-3.5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
         <div className="flex flex-wrap items-center gap-1">
-          {RANGE_OPTIONS.map((option) => (
+          {DASHBOARD_RANGES.map((option) => (
             <button
               key={option}
               type="button"
@@ -161,7 +132,7 @@ export function DashboardHome({
                   : 'text-[#53616b] hover:bg-[#f0f3f4]'
               }`}
             >
-              {DASHBOARD_RANGE_LABELS[option]}
+              {t.ranges[option]}
             </button>
           ))}
         </div>
@@ -169,15 +140,15 @@ export function DashboardHome({
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="date"
-              aria-label="From date"
+              aria-label={t.fromDate}
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
               className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
             />
-            <span className="text-[10px] text-[#8b969e]">→</span>
+            <span className="text-[10px] text-[#8b969e] rtl:-scale-x-100">→</span>
             <input
               type="date"
-              aria-label="To date"
+              aria-label={t.toDate}
               value={endDate}
               onChange={(event) => setEndDate(event.target.value)}
               className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
@@ -189,19 +160,19 @@ export function DashboardHome({
                 if (startDate && endDate && startDate <= endDate) {
                   void reload({ range: 'custom', ownerUserId, sourceId, startDate, endDate });
                 } else {
-                  setError('Pick a from date on or before the to date.');
+                  setError(t.badRange);
                 }
               }}
               className="h-8 rounded-lg bg-[#132932] px-3 text-[10px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
             >
-              Apply
+              {t.apply}
             </button>
           </div>
         ) : null}
         <div className="ms-auto flex flex-wrap items-center gap-2">
           {canFilterOwner ? (
             <label className="flex items-center gap-1.5">
-              <span className="text-[10px] font-semibold text-[#7b8790]">Owner</span>
+              <span className="text-[10px] font-semibold text-[#7b8790]">{t.owner}</span>
               <select
                 value={ownerUserId}
                 disabled={busy}
@@ -212,7 +183,7 @@ export function DashboardHome({
                 }}
                 className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[10px] font-medium text-[#3c4a54] outline-none focus:border-[#18b6a4]"
               >
-                <option value="">Everyone</option>
+                <option value="">{t.everyone}</option>
                 {ownerOptions.map((owner) => (
                   <option key={owner.id} value={owner.id}>
                     {owner.displayName}
@@ -222,7 +193,7 @@ export function DashboardHome({
             </label>
           ) : null}
           <label className="flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold text-[#7b8790]">Source</span>
+            <span className="text-[10px] font-semibold text-[#7b8790]">{t.source}</span>
             <select
               value={sourceId}
               disabled={busy}
@@ -233,10 +204,10 @@ export function DashboardHome({
               }}
               className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[10px] font-medium text-[#3c4a54] outline-none focus:border-[#18b6a4]"
             >
-              <option value="">All sources</option>
+              <option value="">{t.allSources}</option>
               {sourceOptions.map((source) => (
                 <option key={source.id} value={source.id}>
-                  {source.name}
+                  {catalogLabel(m.catalog.sources, source.code, source.name)}
                 </option>
               ))}
             </select>
@@ -247,59 +218,59 @@ export function DashboardHome({
       {/* KPI cards */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
-          label={`New leads · ${rangeLabel}`}
+          label={t.kpi.newLeads(rangeLabel)}
           value={formatCount(overview.newLeads)}
-          helper="Lead received in the period"
+          helper={t.kpi.newLeadsHelper}
           icon="leads"
           tone="teal"
         />
         <KpiCard
-          label="Open opportunities"
+          label={t.kpi.openOpportunities}
           value={formatCount(overview.openOpportunities)}
-          helper="Right now · open stages only"
+          helper={t.kpi.openStagesNow}
           icon="opportunities"
           tone="blue"
         />
         <KpiCard
-          label="Pipeline value"
+          label={t.kpi.pipelineValue}
           value={formatEgp(overview.pipelineValue)}
-          helper="Right now · open stages only"
+          helper={t.kpi.openStagesNow}
           icon="money"
           tone="violet"
         />
         <KpiCard
-          label="Overdue follow-ups"
+          label={t.kpi.overdue}
           value={formatCount(overview.overdueFollowUps)}
-          helper="Right now · action needed"
+          helper={t.kpi.overdueHelper}
           icon="alert"
           tone="red"
           warning={overview.overdueFollowUps > 0}
         />
         <KpiCard
-          label={`Won deals · ${rangeLabel}`}
+          label={t.kpi.won(rangeLabel)}
           value={formatCount(overview.wonCount)}
-          helper={`Won value ${formatEgp(overview.wonValue)}`}
+          helper={t.kpi.wonHelper(formatEgp(overview.wonValue))}
           icon="check"
           tone="teal"
         />
         <KpiCard
-          label={`Lost deals · ${rangeLabel}`}
+          label={t.kpi.lost(rangeLabel)}
           value={formatCount(overview.lostCount)}
-          helper={`Lost value ${formatEgp(overview.lostValue)}`}
+          helper={t.kpi.lostHelper(formatEgp(overview.lostValue))}
           icon="x"
           tone="red"
         />
         <KpiCard
-          label={`Quotations sent · ${rangeLabel}`}
+          label={t.kpi.quotationsSent(rangeLabel)}
           value={formatCount(overview.quotationsSent)}
-          helper={`${formatCount(overview.quotationsAccepted)} accepted`}
+          helper={t.kpi.acceptedHelper(formatCount(overview.quotationsAccepted))}
           icon="quotation"
           tone="blue"
         />
         <KpiCard
-          label="Due today"
+          label={t.kpi.dueToday}
           value={formatCount(overview.dueTodayFollowUps)}
-          helper="Right now · follow-ups due today"
+          helper={t.kpi.dueTodayHelper}
           icon="clock"
           tone="amber"
         />
@@ -311,15 +282,14 @@ export function DashboardHome({
           <div className="flex items-center justify-between border-b border-[#e7ebed] px-5 py-4">
             <div>
               <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">
-                Pipeline by stage
+                {t.pipelineByStage}
               </h2>
               <p className="mt-0.5 text-[10px] text-[#8a959d]">
-                Right now · {formatCount(overview.openOpportunities)} open ·{' '}
-                {formatEgp(overview.pipelineValue)} total
+                {t.pipelineSnapshot(formatCount(overview.openOpportunities), formatEgp(overview.pipelineValue))}
               </p>
             </div>
             <Link href="/crm/pipeline" className="text-[10px] font-bold text-[#118e82] hover:text-[#08756b]">
-              Board
+              {t.board}
             </Link>
           </div>
           <div className="space-y-2.5 px-5 py-4">
@@ -331,7 +301,7 @@ export function DashboardHome({
               return (
                 <div key={stage} className="flex items-center gap-3">
                   <span className="w-[110px] shrink-0 truncate text-[10px] font-semibold text-[#53616b]">
-                    {STAGE_LABELS[stage]}
+                    {m.opportunityStage[stage]}
                   </span>
                   <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#eef1f3]">
                     <div
@@ -348,7 +318,7 @@ export function DashboardHome({
                     />
                   </div>
                   <span className="w-[90px] shrink-0 text-end text-[10px] font-semibold text-[#35434c]">
-                    {count} · {formatEgp(value)}
+                    {formatCount(count)} · {formatEgp(value)}
                   </span>
                 </div>
               );
@@ -359,11 +329,10 @@ export function DashboardHome({
         <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
           <div className="border-b border-[#e7ebed] px-5 py-4">
             <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">
-              Conversion funnel
+              {t.funnel.title}
             </h2>
             <p className="mt-0.5 text-[10px] text-[#8a959d]">
-              Of the {formatCount(funnelTotal)} leads received in {rangeLabel}, how many reached
-              each step
+              {t.funnel.subtitle(formatCount(funnelTotal), rangeLabel)}
             </p>
           </div>
           <div className="space-y-2.5 px-5 py-4">
@@ -372,7 +341,7 @@ export function DashboardHome({
               return (
                 <div key={step.key} className="flex items-center gap-3">
                   <span className="w-[110px] shrink-0 truncate text-[10px] font-semibold text-[#53616b]">
-                    {FUNNEL_LABELS[step.key]}
+                    {catalogLabel(t.funnel.steps, step.key, step.key)}
                   </span>
                   <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[#eef1f3]">
                     <div
@@ -387,9 +356,7 @@ export function DashboardHome({
               );
             })}
             <p className="pt-2 text-[9px] leading-4 text-[#98a2a9]">
-              Each step counts the leads from the step above that got this far, so the percentage
-              can only go down. Qualified means the lead became an opportunity; Won means that deal
-              was won. The first step matches the New leads figure above.
+              {t.funnel.footnote}
             </p>
           </div>
         </section>
@@ -399,33 +366,30 @@ export function DashboardHome({
       <section className="mt-5 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
         <div className="border-b border-[#e7ebed] px-5 py-4">
           <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">
-            {userRole === 'SALES_REP' ? 'My performance' : 'Team performance'}
+            {userRole === 'SALES_REP' ? t.team.titleRep : t.team.title}
           </h2>
-          <p className="mt-0.5 text-[10px] text-[#8a959d]">
-            Period columns cover {rangeLabel}; active leads, open opportunities, pipeline value and
-            overdue are current snapshots
-          </p>
+          <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.team.subtitle(rangeLabel)}</p>
         </div>
         {payload.repPerformance.length === 0 ? (
           <p className="px-5 py-8 text-center text-[11px] text-[#89949c]">
-            No sales team members with activity yet.
+            {t.team.empty}
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-start">
               <thead className="border-b border-[#e5eaec] bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
                 <tr>
-                  <th className="px-5 py-3">Sales person</th>
-                  <th className="px-3 py-3 text-end">Active leads</th>
-                  <th className="px-3 py-3 text-end">New leads</th>
-                  <th className="px-3 py-3 text-end">Open opps</th>
-                  <th className="px-3 py-3 text-end">Pipeline</th>
-                  <th className="px-3 py-3 text-end">Overdue</th>
-                  <th className="px-3 py-3 text-end">Completed</th>
-                  <th className="px-3 py-3 text-end">Quotes sent</th>
-                  <th className="px-3 py-3 text-end">Wins</th>
-                  <th className="px-3 py-3 text-end">Won value</th>
-                  <th className="px-3 py-3 text-end">Losses</th>
+                  <th className="px-5 py-3 text-start">{t.team.columns.person}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.activeLeads}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.newLeads}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.openOpportunities}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.pipeline}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.overdue}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.completed}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.quotationsSent}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.wins}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.wonValue}</th>
+                  <th className="px-3 py-3 text-end">{t.team.columns.losses}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf0f1]">
@@ -433,7 +397,7 @@ export function DashboardHome({
                   <tr key={row.userId}>
                     <td className="px-5 py-3">
                       <p className="text-[11px] font-semibold text-[#33414a]">{row.displayName}</p>
-                      <p className="text-[9px] text-[#98a2a9]">{row.role === 'SALES_MANAGER' ? 'Sales Manager' : 'Sales Rep'}</p>
+                      <p className="text-[9px] text-[#98a2a9]">{m.roles[row.role === 'SALES_MANAGER' ? 'SALES_MANAGER' : 'SALES_REP']}</p>
                     </td>
                     <Cell value={formatCount(row.activeLeads)} />
                     <Cell value={formatCount(row.newLeads)} />
@@ -457,19 +421,21 @@ export function DashboardHome({
       <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
           <div className="border-b border-[#e7ebed] px-5 py-4">
-            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Lost reasons</h2>
-            <p className="mt-0.5 text-[10px] text-[#8a959d]">Deals lost in {rangeLabel}</p>
+            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">{t.lostReasons.title}</h2>
+            <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.lostReasons.subtitle(rangeLabel)}</p>
           </div>
           {payload.lostReasons.length === 0 ? (
             <p className="px-5 py-8 text-center text-[11px] text-[#89949c]">
-              No deals were lost in this period.
+              {t.lostReasons.empty}
             </p>
           ) : (
             <div className="space-y-2.5 px-5 py-4">
               {payload.lostReasons.map((reason) => (
                 <div key={reason.id} className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[10px] font-semibold text-[#35434c]">{reason.label}</p>
+                    <p className="truncate text-[10px] font-semibold text-[#35434c]">
+                      {catalogLabel(m.catalog.lostReasons, reason.code, reason.label)}
+                    </p>
                     <p className="text-[9px] text-[#98a2a9]">{formatEgp(reason.lostValue)}</p>
                   </div>
                   <span className="rounded-full bg-[#ffe9ea] px-2 py-0.5 text-[9px] font-bold text-[#c43f47]">
@@ -483,21 +449,23 @@ export function DashboardHome({
 
         <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
           <div className="border-b border-[#e7ebed] px-5 py-4">
-            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Lead sources</h2>
-            <p className="mt-0.5 text-[10px] text-[#8a959d]">Leads received in {rangeLabel}</p>
+            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">{t.sources.title}</h2>
+            <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.sources.subtitle(rangeLabel)}</p>
           </div>
           {payload.sources.length === 0 ? (
             <p className="px-5 py-8 text-center text-[11px] text-[#89949c]">
-              No leads were received in this period.
+              {t.sources.empty}
             </p>
           ) : (
             <div className="space-y-2.5 px-5 py-4">
               {payload.sources.map((source) => (
                 <div key={source.id} className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[10px] font-semibold text-[#35434c]">{source.name}</p>
+                    <p className="truncate text-[10px] font-semibold text-[#35434c]">
+                      {catalogLabel(m.catalog.sources, source.code, source.name)}
+                    </p>
                     <p className="text-[9px] text-[#98a2a9]">
-                      {source.wins} won · {formatEgp(source.wonValue)}
+                      {t.sources.wonLine(formatCount(source.wins), formatEgp(source.wonValue))}
                     </p>
                   </div>
                   <span className="rounded-full bg-[#e8f4ff] px-2 py-0.5 text-[9px] font-bold text-[#287bb5]">
@@ -511,35 +479,46 @@ export function DashboardHome({
 
         <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
           <div className="border-b border-[#e7ebed] px-5 py-4">
-            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Quotation outcomes</h2>
-            <p className="mt-0.5 text-[10px] text-[#8a959d]">Decisions recorded in {rangeLabel}</p>
+            <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">{t.quotationOutcomes.title}</h2>
+            <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.quotationOutcomes.subtitle(rangeLabel)}</p>
           </div>
           <div className="grid grid-cols-3 gap-2 px-5 py-4 text-center">
-            <OutcomeTile label="Sent" value={payload.quotationOutcomes.sent} tone="bg-[#e8f4ff] text-[#287bb5]" />
-            <OutcomeTile label="Accepted" value={payload.quotationOutcomes.accepted} tone="bg-[#e8f8f1] text-[#14815f]" />
-            <OutcomeTile label="Rejected" value={payload.quotationOutcomes.rejected} tone="bg-[#ffe9ea] text-[#c43f47]" />
+            <OutcomeTile
+              label={t.quotationOutcomes.sent}
+              value={formatCount(payload.quotationOutcomes.sent)}
+              tone="bg-[#e8f4ff] text-[#287bb5]"
+            />
+            <OutcomeTile
+              label={t.quotationOutcomes.accepted}
+              value={formatCount(payload.quotationOutcomes.accepted)}
+              tone="bg-[#e8f8f1] text-[#14815f]"
+            />
+            <OutcomeTile
+              label={t.quotationOutcomes.rejected}
+              value={formatCount(payload.quotationOutcomes.rejected)}
+              tone="bg-[#ffe9ea] text-[#c43f47]"
+            />
           </div>
           <p className="px-5 pb-4 text-[9px] leading-4 text-[#98a2a9]">
-            Counted by the date each quotation was sent, accepted or rejected. See the pipeline
-            board for where each deal stands now.
+            {t.quotationOutcomes.footnote}
           </p>
         </section>
 
         <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
           <div className="border-b border-[#e7ebed] px-5 py-4">
             <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">
-              Quotation conversion
+              {t.quotationConversion.title}
             </h2>
             <p className="mt-0.5 text-[10px] text-[#8a959d]">
-              Of the {formatCount(funnelTotal)} leads received in {rangeLabel}
+              {t.quotationConversion.subtitle(formatCount(funnelTotal), rangeLabel)}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 px-5 py-4 text-center">
             {payload.quotationFunnel.map((step) => (
               <OutcomeTile
                 key={step.key}
-                label={QUOTATION_FUNNEL_LABELS[step.key]}
-                value={step.count}
+                label={catalogLabel(t.quotationConversion.steps, step.key, step.key)}
+                value={formatCount(step.count)}
                 tone={
                   step.key === 'accepted'
                     ? 'bg-[#e8f8f1] text-[#14815f]'
@@ -549,9 +528,10 @@ export function DashboardHome({
             ))}
           </div>
           <p className="px-5 pb-4 text-[9px] leading-4 text-[#98a2a9]">
-            {percent(payload.quotationFunnel[0]?.count ?? 0)}% quoted ·{' '}
-            {percent(payload.quotationFunnel[1]?.count ?? 0)}% accepted. Deliberately outside the
-            funnel: a deal can be won without a quotation ever being sent.
+            {t.quotationConversion.footnote(
+              percent(payload.quotationFunnel[0]?.count ?? 0),
+              percent(payload.quotationFunnel[1]?.count ?? 0),
+            )}
           </p>
         </section>
       </div>
@@ -559,15 +539,15 @@ export function DashboardHome({
       {/* Lead status snapshot */}
       <section className="mt-5 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
         <div className="border-b border-[#e7ebed] px-5 py-4">
-          <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Lead status</h2>
-          <p className="mt-0.5 text-[10px] text-[#8a959d]">Right now · leads not archived</p>
+          <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">{t.leadStatus.title}</h2>
+          <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.leadStatus.subtitle}</p>
         </div>
         <div className="grid grid-cols-3 gap-2 px-5 py-4">
           {overview.leadsByStatus.map((entry) => (
             <OutcomeTile
               key={entry.status}
-              label={STATUS_LABELS[entry.status]}
-              value={entry.count}
+              label={m.leadStatus[entry.status]}
+              value={formatCount(entry.count)}
               tone={
                 entry.status === 'NEW'
                   ? 'bg-[#e9f7ff] text-[#137aa9]'
@@ -581,10 +561,7 @@ export function DashboardHome({
       </section>
 
       <p className="mt-4 text-[9px] text-[#98a2a9]">
-        Figures marked “Right now” ignore the selected period. The others count what happened in
-        it: leads by the day they arrived, deals by the day they were won or lost, quotations by
-        the day they were sent, accepted or rejected, and follow-ups by the day they were
-        completed. Team totals include only the people whose work you can see.
+        {t.footnote}
       </p>
     </>
   );
@@ -640,10 +617,10 @@ function Cell({ value, warning = false }: { value: string; warning?: boolean }) 
   );
 }
 
-function OutcomeTile({ label, value, tone }: { label: string; value: number; tone: string }) {
+function OutcomeTile({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
     <div className={`rounded-lg px-2 py-3 ${tone}`}>
-      <p className="text-[17px] font-semibold tracking-[-0.03em]">{formatCount(value)}</p>
+      <p className="text-[17px] font-semibold tracking-[-0.03em]">{value}</p>
       <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.08em] opacity-80">{label}</p>
     </div>
   );

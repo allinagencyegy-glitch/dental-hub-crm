@@ -1,9 +1,13 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { notFound } from 'next/navigation';
 import { getOpportunityDetailAction } from '@/server/crm/opportunities/actions';
 import { QuotationWorkspace } from '../QuotationWorkspace';
 
-export const metadata = { title: 'New quotation | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.quotations.newPageTitle) };
+}
 
 interface NewQuotationPageProps {
   searchParams: Promise<{ opportunity?: string }>;

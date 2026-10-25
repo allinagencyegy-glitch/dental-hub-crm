@@ -26,6 +26,8 @@ import {
 } from '../../src/server/crm/quotations/service';
 import type { QuotationDetail, QuotationListItem } from '../../src/server/crm/quotations/repository';
 import { uniqueToken } from './setup/db';
+import { messagesFor } from '../../src/i18n/messages';
+import { snapshotReason } from '../../src/i18n/quotation';
 
 /**
  * Quotations V1 use cases: creation, totals, transitions, revisions, row
@@ -85,12 +87,15 @@ describe('quotations (use cases)', () => {
   }
 
   function assertFailure(
-    result: { ok: boolean; error?: string; message?: string },
+    result: { ok: boolean; error?: string; message?: string; problem?: string },
     expectedCode: string,
+    expectedProblem?: string,
   ) {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe(expectedCode);
+      // The broken rule is what the reader is told about, in their language.
+      if (expectedProblem) expect(result.problem).toBe(expectedProblem);
     }
   }
 
@@ -208,7 +213,7 @@ describe('quotations (use cases)', () => {
     it('rejects empty items', async () => {
       const opportunity = await newOpportunity();
       const result = await createQuotationUseCase(manager, opportunity.id, { items: [] }, client);
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'ITEMS_REQUIRED');
     });
 
     it('rejects a blank item description', async () => {
@@ -219,7 +224,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: '   ', quantity: 1, unitPrice: 10 }] },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'DESCRIPTION_REQUIRED');
     });
 
     it('rejects a non-positive quantity', async () => {
@@ -230,7 +235,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: 'Zero units', quantity: 0, unitPrice: 10 }] },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'QUANTITY_NOT_POSITIVE');
     });
 
     it('rejects a negative unit price', async () => {
@@ -241,7 +246,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: 'Refund line', quantity: 1, unitPrice: -5 }] },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'UNIT_PRICE_NEGATIVE');
     });
 
     it('rejects a negative discount', async () => {
@@ -252,7 +257,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: 'Item', quantity: 1, unitPrice: 100 }], discountAmount: -1 },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'DISCOUNT_NEGATIVE');
     });
 
     it('rejects a negative tax', async () => {
@@ -263,7 +268,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: 'Item', quantity: 1, unitPrice: 100 }], taxAmount: -1 },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'TAX_NEGATIVE');
     });
 
     it('rejects a discount larger than the subtotal', async () => {
@@ -274,7 +279,7 @@ describe('quotations (use cases)', () => {
         { items: [{ description: 'Item', quantity: 1, unitPrice: 100 }], discountAmount: 150 },
         client,
       );
-      assertFailure(result, 'VALIDATION');
+      assertFailure(result, 'VALIDATION', 'DISCOUNT_EXCEEDS_SUBTOTAL');
     });
 
     it('rejects creation for an unknown opportunity without leaking anything', async () => {
@@ -583,6 +588,42 @@ describe('quotations (use cases)', () => {
       expect(snapshots[1].totalAmount).toBe(200);
       expect(snapshots[0].changeReason).toBe('Status moved to SENT');
     });
+
+    it('writes only reasons the version history can show in Arabic', async () => {
+      const opportunity = await newOpportunity();
+      const quotation = await newQuotation(manager, opportunity.id);
+      await updateDraftQuotationUseCase(
+        manager,
+        quotation.id,
+        { items: [{ description: 'Item', quantity: 1, unitPrice: 200 }] },
+        client,
+      );
+      await transitionQuotationUseCase(manager, quotation.id, 'SENT', client);
+      await transitionQuotationUseCase(manager, quotation.id, 'REJECTED', client);
+      const revision = await reviseQuotationUseCase(manager, quotation.id, client);
+      if (!revision.ok) throw new Error(revision.message);
+
+      const reasons = [
+        ...(await listQuotationSnapshotsUseCase(manager, quotation.id, client)),
+        ...(await listQuotationSnapshotsUseCase(manager, revision.quotation.id, client)),
+      ].map((snapshot) => snapshot.changeReason ?? '');
+      expect(reasons).toEqual([
+        'Status moved to REJECTED',
+        'Status moved to SENT',
+        'Draft updated',
+        'Quotation created',
+        `Revision of ${quotation.quoteNumber}`,
+      ]);
+
+      const ar = messagesFor('ar');
+      expect(reasons.map((reason) => snapshotReason(reason, ar))).toEqual([
+        'تغيّرت الحالة إلى «مرفوض»',
+        'تغيّرت الحالة إلى «مُرسَل»',
+        'تحديث المسودة',
+        'إنشاء عرض السعر',
+        `نسخة معدّلة من ${quotation.quoteNumber}`,
+      ]);
+    });
   });
 
   describe('one accepted quotation per opportunity, and closed deals', () => {
@@ -633,7 +674,10 @@ describe('quotations (use cases)', () => {
 
       const refused = await transitionQuotationUseCase(manager, second.id, 'ACCEPTED', client);
       assertFailure(refused, 'ALREADY_ACCEPTED');
-      if (!refused.ok) expect(refused.message).toContain(first.quoteNumber);
+      if (!refused.ok) {
+        expect(refused.message).toContain(first.quoteNumber);
+        expect(refused.acceptedQuoteNumber).toBe(first.quoteNumber);
+      }
 
       expect((await getQuotationUseCase(manager, second.id, client))!.status).toBe('SENT');
       // The other quotation can still be closed out as rejected.

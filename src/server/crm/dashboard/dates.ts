@@ -39,13 +39,6 @@
 export const DASHBOARD_RANGES = ['last7', 'last30', 'thisMonth', 'custom'] as const;
 export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
 
-export const DASHBOARD_RANGE_LABELS: Record<DashboardRange, string> = {
-  last7: 'Last 7 days',
-  last30: 'Last 30 days',
-  thisMonth: 'This month',
-  custom: 'Custom',
-};
-
 export function isDashboardRange(value: unknown): value is DashboardRange {
   return typeof value === 'string' && (DASHBOARD_RANGES as readonly string[]).includes(value);
 }
