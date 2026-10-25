@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOCALE, LOCALES, isLocale, textDirection } from '../../src/i18n/config';
@@ -91,11 +91,16 @@ describe('message catalogues', () => {
 });
 
 describe('catalog labels', () => {
-  /** The codes a migration seeds into `table`, read from its INSERT. */
+  /** The codes the migrations seed into `table`, read from their INSERTs. */
   function seededCodes(table: string, kind?: string): string[] {
-    const sql = readFileSync(path.resolve(process.cwd(), 'migrations/0002_crm_catalogs.sql'), 'utf8');
-    const insert = new RegExp(`INSERT INTO ${table} \\([^)]*\\) VALUES([\\s\\S]*?);`).exec(sql)?.[1] ?? '';
-    const rows = [...insert.matchAll(/\(([^)]*)\)/g)].map((row) => row[1].split(',').map((cell) => cell.trim().replace(/^'|'$/g, '')));
+    const directory = path.resolve(process.cwd(), 'migrations');
+    const inserts = readdirSync(directory)
+      .filter((file) => file.endsWith('.sql'))
+      .map((file) => readFileSync(path.join(directory, file), 'utf8'))
+      .flatMap((sql) => [...sql.matchAll(new RegExp(`INSERT INTO ${table} \\([^)]*\\) VALUES([\\s\\S]*?);`, 'g'))].map((match) => match[1]));
+    const rows = inserts.flatMap((insert) =>
+      [...insert.matchAll(/\(([^)]*)\)/g)].map((row) => row[1].split(',').map((cell) => cell.trim().replace(/^'|'$/g, ''))),
+    );
     return kind ? rows.filter((row) => row[0] === kind).map((row) => row[1]) : rows.map((row) => row[0]);
   }
 

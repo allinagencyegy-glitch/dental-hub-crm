@@ -20,6 +20,7 @@ import {
 import type { QuotationDetail, QuotationListItem, QuotationRevisionSnapshot } from './repository';
 
 const itemSchema = z.object({
+  productId: z.uuid().nullable().optional(),
   description: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),

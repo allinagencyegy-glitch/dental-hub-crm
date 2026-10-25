@@ -191,6 +191,16 @@ cd /var/lib/dentalhub/current && sudo -u dentalhub npm run admin:create
 cd /var/lib/dentalhub/current && sudo -u dentalhub npm run admin:create -- --force
 ```
 
+بعد كده حمّل قايمة الأسعار في كتالوج المنتجات (مرة واحدة بس):
+
+```bash
+cd /var/lib/dentalhub/current && sudo -u dentalhub npm run catalog:import
+```
+
+الأمر ده بيضيف موديلات ROSON وToye وFomos وX-Smile وMecco بأسعارها. بعد كده الأسعار بتتعدل من
+**Settings ← Products** (المنتجات). لو شغّلته تاني، هيضيف بس الموديلات الناقصة، وعمره ما هيغيّر
+سعر اتعدّل من البرنامج.
+
 ما تشغّلش `db:seed` ولا `db:seed:acceptance` على السيرفر أبداً. دول لبيانات التجربة على جهاز
 المطوّر بس.
 

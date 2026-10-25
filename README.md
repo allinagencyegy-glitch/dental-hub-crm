@@ -92,6 +92,7 @@ refuse to run when `NODE_ENV=production`.
 | `npm run db:seed` | Create the development accounts if absent (never resets a password) |
 | `npm run db:seed:acceptance` | Create sample leads, an opportunity and follow-ups in the local `dental_hub_crm` database only |
 | `npm run admin:create` | Create the first real admin account, production included (asks for name, email and password) |
+| `npm run catalog:import` | Load the Dental Hub price list into the product catalogue, production included (adds missing models, never changes existing ones) |
 | `npm run test:crm` | Domain suite: migrations, constraints, repositories and use cases |
 | `npm run test:foundation` | Production build, then sign-in, sessions and HTTP acceptance against a real server |
 
@@ -132,6 +133,7 @@ closes the firewall to everything except SSH, HTTP and HTTPS.
 git clone <repository URL> /opt/dental-hub-crm
 sudo bash /opt/dental-hub-crm/deploy/setup.sh --domain crm.example.com --email you@example.com
 cd /var/lib/dentalhub/current && sudo -u dentalhub npm run admin:create
+cd /var/lib/dentalhub/current && sudo -u dentalhub npm run catalog:import
 ```
 
 Point the domain's DNS A record at the server; Caddy issues the certificate as
@@ -142,6 +144,10 @@ existing database and `.env`. `bash deploy/setup.sh --help` lists the options.
 **Settings → Users**. It refuses while an active admin already exists; if every
 admin is locked out, `npm run admin:create -- --force` adds another one. Never
 run either seed script on the server.
+
+`catalog:import` loads the price list in `scripts/catalog/price-list.ts`. After
+that, prices are kept in **Settings → Products**; running the import again only
+adds models that are missing and never overwrites a price changed in the app.
 
 ### Updating
 

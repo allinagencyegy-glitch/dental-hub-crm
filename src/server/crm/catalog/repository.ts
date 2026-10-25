@@ -182,22 +182,35 @@ export async function createProductCategory(
 export interface Product {
   id: string;
   categoryId: string;
+  /** The maker, e.g. ROSON. Null for an unbranded item. */
+  brand: string | null;
   name: string;
+  /** The starting price in EGP. Null = quoted case by case. */
+  listPrice: number | null;
   isActive: boolean;
 }
 
 type ProductRow = {
   id: string;
   category_id: string;
+  brand: string | null;
   name: string;
+  list_price: string | null;
   is_active: boolean;
 };
 
 function toProduct(row: ProductRow): Product {
-  return { id: row.id, categoryId: row.category_id, name: row.name, isActive: row.is_active };
+  return {
+    id: row.id,
+    categoryId: row.category_id,
+    brand: row.brand,
+    name: row.name,
+    listPrice: row.list_price === null ? null : Number(row.list_price),
+    isActive: row.is_active,
+  };
 }
 
-const PRODUCT_COLUMNS = 'id, category_id, name, is_active';
+const PRODUCT_COLUMNS = 'id, category_id, brand, name, list_price, is_active';
 
 export async function listProducts(db: Db, categoryId: string): Promise<Product[]> {
   const { rows } = await db.query<ProductRow>(
@@ -216,6 +229,144 @@ export async function createProduct(
     [input.categoryId, input.name.trim()],
   );
   return toProduct(rows[0]);
+}
+
+/** Another product already has this brand and name. */
+export class DuplicateProductError extends Error {
+  constructor(brand: string | null, name: string) {
+    super(`"${brand ? `${brand} ` : ''}${name}" is already in the catalogue.`);
+    this.name = 'DuplicateProductError';
+  }
+}
+
+/** A product as the catalogue page and the quotation picker show it. */
+export interface CatalogProduct extends Product {
+  categoryCode: string;
+  categoryName: string;
+}
+
+type CatalogProductRow = ProductRow & { category_code: string; category_name: string };
+
+function toCatalogProduct(row: CatalogProductRow): CatalogProduct {
+  return { ...toProduct(row), categoryCode: row.category_code, categoryName: row.category_name };
+}
+
+/** Empty brand text is stored as null, so "no brand" has one spelling. */
+function brandValue(brand: string | null | undefined): string | null {
+  const trimmed = brand?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
+}
+
+function priceValue(price: number | null): string | null {
+  return price === null ? null : price.toFixed(2);
+}
+
+/** The whole catalogue, brand by brand. `activeOnly` hides retired models. */
+export async function listCatalogProducts(
+  db: Db,
+  options: { activeOnly?: boolean } = {},
+): Promise<CatalogProduct[]> {
+  const { rows } = await db.query<CatalogProductRow>(
+    `SELECT p.id, p.category_id, p.brand, p.name, p.list_price, p.is_active,
+            c.code AS category_code, c.name AS category_name
+       FROM crm_product p
+       JOIN crm_product_category c ON c.id = p.category_id
+      ${options.activeOnly ? 'WHERE p.is_active' : ''}
+      ORDER BY p.brand ASC NULLS LAST, p.name ASC`,
+  );
+  return rows.map(toCatalogProduct);
+}
+
+/** The products among `ids` that exist. Order is not significant. */
+export async function findProductsByIds(db: Db, ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return [];
+  const { rows } = await db.query<ProductRow>(
+    `SELECT ${PRODUCT_COLUMNS} FROM crm_product WHERE id = ANY($1::uuid[])`,
+    [ids],
+  );
+  return rows.map(toProduct);
+}
+
+export interface CatalogProductInput {
+  categoryId: string;
+  brand: string | null;
+  name: string;
+  listPrice: number | null;
+}
+
+export async function createCatalogProduct(db: Db, input: CatalogProductInput): Promise<Product> {
+  const brand = brandValue(input.brand);
+  try {
+    const { rows } = await db.query<ProductRow>(
+      `INSERT INTO crm_product (category_id, brand, name, list_price)
+       VALUES ($1, $2, $3, $4) RETURNING ${PRODUCT_COLUMNS}`,
+      [input.categoryId, brand, input.name.trim(), priceValue(input.listPrice)],
+    );
+    return toProduct(rows[0]);
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new DuplicateProductError(brand, input.name.trim());
+    throw error;
+  }
+}
+
+/** Rewrites one product. Null when it does not exist. */
+export async function updateCatalogProduct(
+  db: Db,
+  id: string,
+  input: CatalogProductInput & { isActive: boolean },
+): Promise<Product | null> {
+  const brand = brandValue(input.brand);
+  try {
+    const { rows } = await db.query<ProductRow>(
+      `UPDATE crm_product
+          SET category_id = $2, brand = $3, name = $4, list_price = $5, is_active = $6,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING ${PRODUCT_COLUMNS}`,
+      [id, input.categoryId, brand, input.name.trim(), priceValue(input.listPrice), input.isActive],
+    );
+    return rows[0] ? toProduct(rows[0]) : null;
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new DuplicateProductError(brand, input.name.trim());
+    throw error;
+  }
+}
+
+export interface ProductImportRow {
+  categoryCode: string;
+  brand: string;
+  name: string;
+  listPrice: number | null;
+}
+
+/**
+ * Adds every row whose brand and name are not in the catalogue yet. A row
+ * that is already there is left exactly as it is, so running an import again
+ * never undoes a price someone changed in the app.
+ */
+export async function importProducts(
+  db: Db,
+  rows: ProductImportRow[],
+): Promise<{ created: string[]; existing: string[] }> {
+  const created: string[] = [];
+  const existing: string[] = [];
+  for (const row of rows) {
+    const label = `${row.brand} ${row.name}`;
+    const { rowCount } = await db.query(
+      `INSERT INTO crm_product (category_id, brand, name, list_price)
+       SELECT c.id, $2, $3, $4 FROM crm_product_category c WHERE c.code = $1
+       ON CONFLICT (lower(btrim(COALESCE(brand, ''))), lower(btrim(name))) DO NOTHING`,
+      [normaliseCode(row.categoryCode), brandValue(row.brand), row.name.trim(), priceValue(row.listPrice)],
+    );
+    if (rowCount === 1) {
+      created.push(label);
+      continue;
+    }
+    const category = await findProductCategoryByCode(db, row.categoryCode);
+    if (!category) throw new Error(`Unknown product category "${row.categoryCode}" for ${label}.`);
+    existing.push(label);
+  }
+  return { created, existing };
 }
 
 export interface OutcomeReason {
