@@ -5,33 +5,34 @@ import { createUserAction } from '@/server/users/admin-actions';
 import { EMPTY_ADMIN_STATE } from '@/server/auth/form-state';
 import { ROLES, ROLE_LABELS } from '@/server/authz/permissions';
 
+const LABEL_CLASS = 'block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d]';
 const FIELD_CLASS =
-  'w-full rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-teal-400/60';
+  'h-9 w-full rounded-lg border border-[#dfe4e7] bg-white px-3 text-[12px] text-[#17242c] outline-none transition placeholder:text-[#94a0a9] focus:border-[#18b6a4]';
 
 export function CreateUserForm() {
   const [state, formAction, pending] = useActionState(createUserAction, EMPTY_ADMIN_STATE);
 
   return (
-    <form action={formAction} className="rounded-lg border border-white/10 bg-slate-900/40 p-5">
-      <h2 className="text-sm font-semibold text-white">Add a user</h2>
+    <form action={formAction} className="rounded-xl border border-[#dfe5e8] bg-white p-5">
+      <h2 className="text-sm font-semibold text-[#1c2831]">Add a user</h2>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <label htmlFor="displayName" className="block text-xs font-medium text-slate-400">
+          <label htmlFor="displayName" className={LABEL_CLASS}>
             Display name
           </label>
           <input id="displayName" name="displayName" required maxLength={120} className={FIELD_CLASS} />
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="new-email" className="block text-xs font-medium text-slate-400">
+          <label htmlFor="new-email" className={LABEL_CLASS}>
             Email
           </label>
           <input id="new-email" name="email" type="email" required className={FIELD_CLASS} />
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="new-password" className="block text-xs font-medium text-slate-400">
+          <label htmlFor="new-password" className={LABEL_CLASS}>
             Initial password
           </label>
           <input
@@ -43,11 +44,11 @@ export function CreateUserForm() {
             autoComplete="new-password"
             className={FIELD_CLASS}
           />
-          <p className="text-[11px] text-slate-600">Minimum 12 characters.</p>
+          <p className="text-[10px] text-[#8a959d]">Minimum 12 characters.</p>
         </div>
 
         <div className="space-y-1.5">
-          <label htmlFor="new-role" className="block text-xs font-medium text-slate-400">
+          <label htmlFor="new-role" className={LABEL_CLASS}>
             Role
           </label>
           <select id="new-role" name="role" defaultValue="SALES_REP" className={FIELD_CLASS}>
@@ -61,12 +62,12 @@ export function CreateUserForm() {
       </div>
 
       {state.error ? (
-        <p role="alert" className="mt-4 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <p role="alert" className="mt-4 rounded-lg border border-[#f4c7ca] bg-[#ffe9ea] px-3 py-2 text-sm text-[#c43f47]">
           {state.error}
         </p>
       ) : null}
       {state.success ? (
-        <p className="mt-4 rounded-md bg-teal-500/10 px-3 py-2 text-sm text-teal-300">
+        <p className="mt-4 rounded-lg bg-[#e8f8f1] px-3 py-2 text-sm text-[#14815f]">
           {state.success}
         </p>
       ) : null}
@@ -74,7 +75,7 @@ export function CreateUserForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-4 rounded-md bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 disabled:opacity-60"
+        className="mt-4 inline-flex h-9 items-center rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
       >
         {pending ? 'Creating...' : 'Create user'}
       </button>

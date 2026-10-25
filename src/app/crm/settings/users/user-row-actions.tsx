@@ -30,7 +30,7 @@ export function UserRowActions({ user }: { user: PublicUser }) {
             id={`role-${user.id}`}
             name="role"
             defaultValue={user.role}
-            className="rounded-md border border-white/10 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-teal-400/60"
+            className="h-8 rounded-lg border border-[#dfe4e7] bg-white px-2 text-[11px] text-[#17242c] outline-none focus:border-[#18b6a4]"
           >
             {ROLES.map((role) => (
               <option key={role} value={role}>
@@ -41,7 +41,7 @@ export function UserRowActions({ user }: { user: PublicUser }) {
           <button
             type="submit"
             disabled={rolePending}
-            className="rounded-md border border-white/15 px-2.5 py-1.5 text-xs text-slate-300 transition hover:border-white/30 hover:text-white disabled:opacity-50"
+            className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
           >
             {rolePending ? 'Saving...' : 'Save role'}
           </button>
@@ -55,8 +55,8 @@ export function UserRowActions({ user }: { user: PublicUser }) {
             disabled={activePending}
             className={
               user.isActive
-                ? 'rounded-md border border-red-500/30 px-2.5 py-1.5 text-xs text-red-300 transition hover:border-red-500/60 disabled:opacity-50'
-                : 'rounded-md border border-teal-500/30 px-2.5 py-1.5 text-xs text-teal-300 transition hover:border-teal-500/60 disabled:opacity-50'
+                ? 'h-8 rounded-lg border border-[#f4c7ca] bg-white px-2.5 text-[11px] font-semibold text-[#c43f47] transition hover:bg-[#fff5f5] disabled:opacity-50'
+                : 'h-8 rounded-lg border border-[#bce6df] bg-white px-2.5 text-[11px] font-semibold text-[#087f73] transition hover:bg-[#f0fbf9] disabled:opacity-50'
             }
           >
             {activePending ? 'Saving...' : user.isActive ? 'Deactivate' : 'Activate'}
@@ -65,7 +65,7 @@ export function UserRowActions({ user }: { user: PublicUser }) {
       </div>
 
       {error ? (
-        <p role="alert" className="text-xs text-red-300">
+        <p role="alert" className="text-[11px] font-semibold text-[#c43f47]">
           {error}
         </p>
       ) : null}
