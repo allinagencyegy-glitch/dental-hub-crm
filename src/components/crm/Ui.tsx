@@ -1,8 +1,13 @@
 import Link from 'next/link';
-import type { CustomerLifecycle, FollowUpStatus, LeadSource, LeadStatus, OpportunityStage } from '@/lib/crm-ui/types';
 import { CrmIcon, type CrmIconName } from './CrmIcon';
 
-export type BadgeValue = LeadStatus | OpportunityStage | CustomerLifecycle | FollowUpStatus | LeadSource | 'ON HOLD' | 'DISQUALIFIED';
+export type BadgeValue =
+  | 'NEW' | 'CONTACTED' | 'CONVERTED' | 'DISQUALIFIED'
+  | 'QUALIFICATION' | 'QUOTATION' | 'NEGOTIATION'
+  | 'PROSPECT' | 'CUSTOMER'
+  | 'OVERDUE' | 'TODAY' | 'UPCOMING' | 'COMPLETED'
+  | 'Facebook' | 'WhatsApp' | 'Instagram' | 'Exhibition' | 'Phone'
+  | 'ON HOLD';
 
 const badgeStyles: Record<BadgeValue, string> = {
   NEW: 'bg-[#e9f7ff] text-[#137aa9]', CONTACTED: 'bg-[#fff4d9] text-[#9a6a00]', CONVERTED: 'bg-[#e8f8f1] text-[#14815f]', DISQUALIFIED: 'bg-[#ffe9ea] text-[#c43f47]',
@@ -41,19 +46,6 @@ export function PageHeader({ eyebrow, title, description, actionLabel, actionIco
   );
 }
 
-export function MetricCard({ label, value, helper, icon, tone = 'teal', warning = false }: { label: string; value: string; helper: string; icon: CrmIconName; tone?: 'teal' | 'blue' | 'violet' | 'amber' | 'red'; warning?: boolean }) {
-  const tones = { teal: 'bg-[#e6f7f4] text-[#0a897c]', blue: 'bg-[#eaf4fd] text-[#2a79ad]', violet: 'bg-[#f1edff] text-[#7057b8]', amber: 'bg-[#fff3dd] text-[#a16800]', red: 'bg-[#ffe9ea] text-[#c43f47]' };
-  return (
-    <div className={`rounded-xl bg-white p-4 shadow-[0_1px_2px_rgba(20,35,45,0.04),0_7px_24px_rgba(20,35,45,0.035)] ${warning ? 'ring-1 ring-[#f4c7ca]' : 'ring-1 ring-[#e4e9eb]'}`}>
-      <div className="flex items-start justify-between">
-        <p className="text-[10px] font-bold uppercase tracking-[0.11em] text-[#7e8992]">{label}</p>
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${tones[tone]}`}><CrmIcon name={icon} className="h-4 w-4" /></span>
-      </div>
-      <p className={`mt-3 text-[25px] font-semibold tracking-[-0.045em] ${warning ? 'text-[#be3d45]' : 'text-[#17242c]'}`}>{value}</p>
-      <p className="mt-1 text-[10px] text-[#87929a]">{helper}</p>
-    </div>
-  );
-}
 
 export function SectionTitle({ title, subtitle, href, linkLabel = 'View all' }: { title: string; subtitle?: string; href?: string; linkLabel?: string }) {
   return (
@@ -102,9 +94,6 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   return <Link href={href} className="mb-4 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#6f7d86] transition hover:text-[#118e82]"><CrmIcon name="arrow" className="h-3.5 w-3.5 rotate-180" />{label}</Link>;
 }
 
-export function DetailAction({ icon, children, primary = false }: { icon: CrmIconName; children: React.ReactNode; primary?: boolean }) {
-  return <button type="button" title="Preview only — changes are not saved" className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-[11px] font-semibold transition ${primary ? 'bg-[#132932] text-white hover:bg-[#1b3944]' : 'border border-[#dbe2e5] bg-white text-[#53616b] hover:bg-[#f7f9fa]'}`}><CrmIcon name={icon} className="h-3.5 w-3.5" />{children}</button>;
-}
 
 export function InfoLine({ icon, label, value }: { icon: CrmIconName; label: string; value: string }) {
   return <div className="flex gap-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#f0f4f5] text-[#6a7881]"><CrmIcon name={icon} className="h-3.5 w-3.5" /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">{label}</p><p className="mt-0.5 text-[11px] font-medium text-[#33414a]">{value}</p></div></div>;
