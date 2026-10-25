@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { updateLeadAction } from '@/server/crm/leads/actions';
-import { ROLE_LABELS, isRole } from '@/server/authz/permissions';
+import { isRole } from '@/server/authz/permissions';
+import { useMessages } from '@/i18n/I18nProvider';
+import { catalogLabel } from '@/i18n/format';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { SourceOption, ProductCategoryOption, CampaignOption, AssignableOwner } from './LeadEditForm.types';
 
@@ -19,6 +21,8 @@ interface LeadEditFormProps {
 
 export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: LeadEditFormProps) {
   const router = useRouter();
+  const m = useMessages();
+  const t = m.leads.edit;
   const canAssignOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
 
   const [formData, setFormData] = useState({
@@ -84,8 +88,8 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
 
     // Validate required fields
     const errors: Record<string, string> = {};
-    if (!formData.contact.fullName.trim()) errors['contact.fullName'] = 'Full name is required';
-    if (!formData.sourceCode) errors.sourceCode = 'Source is required';
+    if (!formData.contact.fullName.trim()) errors['contact.fullName'] = m.leads.fullNameRequired;
+    if (!formData.sourceCode) errors.sourceCode = m.leads.sourceRequired;
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -115,10 +119,10 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
           setError(result.message);
           if (result.conflict) {
             if (result.conflict.phoneContactId) {
-              setFieldErrors((prev) => ({ ...prev, 'contact.phone': 'This phone number belongs to another contact' }));
+              setFieldErrors((prev) => ({ ...prev, 'contact.phone': t.phoneTaken }));
             }
             if (result.conflict.emailContactId) {
-              setFieldErrors((prev) => ({ ...prev, 'contact.email': 'This email belongs to another contact' }));
+              setFieldErrors((prev) => ({ ...prev, 'contact.email': t.emailTaken }));
             }
           }
         } else {
@@ -126,7 +130,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
         }
       }
     } catch {
-      setError('An unexpected error occurred. Please try again.');
+      setError(m.common.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -135,9 +139,9 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        eyebrow="Lead management"
-        title="Edit lead"
-        description="Update the lead, the contact’s details and where the inquiry came from."
+        eyebrow={m.leads.eyebrow}
+        title={t.heading}
+        description={t.description}
       />
 
       {error && (
@@ -149,13 +153,13 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-[#1c2831]">Contact information</h2>
-            <span className="text-[10px] text-[#8a959d]">Changes to this contact will update their information everywhere in the CRM.</span>
+            <h2 className="text-sm font-semibold text-[#1c2831]">{m.leads.contactInformation}</h2>
+            <span className="text-[10px] text-[#8a959d]">{t.contactHint}</span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="fullName" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Full name *
+                {m.leads.fullName} *
               </label>
               <input
                 id="fullName"
@@ -165,14 +169,14 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] placeholder-[#94a0a9] transition ${
                   fieldErrors['contact.fullName'] ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
-                placeholder="Dr. Ahmed Hassan"
+                placeholder={m.leads.namePlaceholder}
                 disabled={submitting}
               />
               {fieldErrors['contact.fullName'] && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors['contact.fullName']}</p>}
             </div>
             <div>
               <label htmlFor="phone" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Phone
+                {m.leads.phone}
               </label>
               <input
                 id="phone"
@@ -183,13 +187,14 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                   fieldErrors['contact.phone'] ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
                 placeholder="010 1234 5678"
+                dir="ltr"
                 disabled={submitting}
               />
               {fieldErrors['contact.phone'] && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors['contact.phone']}</p>}
             </div>
             <div>
               <label htmlFor="email" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Email
+                {m.leads.email}
               </label>
               <input
                 id="email"
@@ -200,20 +205,21 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                   fieldErrors['contact.email'] ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
                 placeholder="ahmed@clinic.com"
+                dir="ltr"
                 disabled={submitting}
               />
               {fieldErrors['contact.email'] && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors['contact.email']}</p>}
             </div>
           </div>
-          <p className="text-[10px] text-[#8a959d]">Phone and email identify this contact across the CRM. At least one is required.</p>
+          <p className="text-[10px] text-[#8a959d]">{t.identityHint}</p>
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Lead attribution</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{t.attribution}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="sourceCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Source *
+                {m.leads.source} *
               </label>
               <select
                 id="sourceCode"
@@ -224,10 +230,10 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 }`}
                 disabled={submitting}
               >
-                <option value="">Select source</option>
+                <option value="">{m.leads.selectSource}</option>
                 {catalog.sources.map((source) => (
                   <option key={source.id} value={source.code}>
-                    {source.name}
+                    {catalogLabel(m.catalog.sources, source.code, source.name)}
                   </option>
                 ))}
               </select>
@@ -235,7 +241,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
             </div>
             <div>
               <label htmlFor="campaignCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Campaign
+                {m.leads.campaign}
               </label>
               <select
                 id="campaignCode"
@@ -244,9 +250,9 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] transition border-[#dfe4e7] focus:border-[#18b6a4]`}
                 disabled={submitting || loadingCampaigns || campaigns.length === 0}
               >
-                <option value="">Select campaign</option>
+                <option value="">{m.leads.selectCampaign}</option>
                 {loadingCampaigns ? (
-                  <option value="" disabled>Loading...</option>
+                  <option value="" disabled>{m.common.loading}</option>
                 ) : (
                   campaigns.map((campaign) => (
                     <option key={campaign.id} value={campaign.code}>
@@ -258,7 +264,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
             </div>
             <div>
               <label htmlFor="productCategoryCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Product interest
+                {m.leads.productInterest}
               </label>
               <select
                 id="productCategoryCode"
@@ -267,10 +273,10 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] transition border-[#dfe4e7] focus:border-[#18b6a4]`}
                 disabled={submitting}
               >
-                <option value="">Select product category</option>
+                <option value="">{m.leads.selectCategory}</option>
                 {catalog.productCategories.map((category) => (
                   <option key={category.id} value={category.code}>
-                    {category.name}
+                    {catalogLabel(m.catalog.productCategories, category.code, category.name)}
                   </option>
                 ))}
               </select>
@@ -280,7 +286,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
           {canAssignOwner && (
             <div>
               <label htmlFor="ownerUserId" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Assigned owner
+                {m.leads.owner}
               </label>
               <select
                 id="ownerUserId"
@@ -289,23 +295,23 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] transition border-[#dfe4e7] focus:border-[#18b6a4]`}
                 disabled={submitting || assignableOwners.length === 0}
               >
-                <option value="">Select owner</option>
+                <option value="">{m.leads.selectOwner}</option>
                 {assignableOwners.map((owner) => (
                   <option key={owner.id} value={owner.id}>
-                    {owner.displayName} ({isRole(owner.role) ? ROLE_LABELS[owner.role] : owner.role})
+                    {m.leads.ownerOption(owner.displayName, isRole(owner.role) ? m.roles[owner.role] : owner.role)}
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-[10px] text-[#8a959d]">Lead will be assigned to this salesperson.</p>
+              <p className="mt-1 text-[10px] text-[#8a959d]">{m.leads.ownerHint}</p>
             </div>
           )}
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Notes</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{m.leads.notes}</h2>
           <div>
             <label htmlFor="note" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-              Inquiry context
+              {m.leads.inquiryContext}
             </label>
             <textarea
               id="note"
@@ -313,7 +319,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
               onChange={(e) => handleChange('note', e.target.value)}
               rows={4}
               className="w-full h-28 rounded-lg border border-[#dfe4e7] bg-white px-3 py-2 text-[11px] text-[#17242c] placeholder-[#94a0a9] transition focus:border-[#18b6a4] resize-none"
-              placeholder="Customer is looking for a 4-chair dental unit package with delivery to Alexandria..."
+              placeholder={m.leads.notePlaceholder}
               disabled={submitting}
             />
           </div>
@@ -326,7 +332,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
             className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-4 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
             disabled={submitting}
           >
-            Cancel
+            {m.common.cancel}
           </button>
           <button
             type="submit"
@@ -336,12 +342,12 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
             {submitting ? (
               <>
                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                Saving...
+                {m.common.saving}
               </>
             ) : (
               <>
                 <CrmIcon name="check" className="h-4 w-4" />
-                Save Changes
+                {t.save}
               </>
             )}
           </button>

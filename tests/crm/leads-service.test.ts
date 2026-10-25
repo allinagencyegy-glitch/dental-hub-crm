@@ -502,6 +502,8 @@ describe('Application Service - disqualifyLeadUseCase', () => {
     if (!otherReasonId) return;
 
     await expect(disqualifyLeadUseCase(rep1Actor, rep1LeadId, { reasonId: otherReasonId, note: null }, db)).rejects.toThrow('requires a note');
+    // The problem is also named by code, so the action can say it in the reader's language.
+    await expect(disqualifyLeadUseCase(rep1Actor, rep1LeadId, { reasonId: otherReasonId, note: null }, db)).rejects.toMatchObject({ problem: 'NOTE_REQUIRED' });
   });
 
   it('rejects invalid/inactive disqualify reason', async () => {
@@ -516,6 +518,7 @@ describe('Application Service - disqualifyLeadUseCase', () => {
     if (!holdReasonId) return;
 
     await expect(disqualifyLeadUseCase(rep1Actor, rep1LeadId, { reasonId: holdReasonId, note: 'Test' }, db)).rejects.toThrow('must be "disqualify"');
+    await expect(disqualifyLeadUseCase(rep1Actor, rep1LeadId, { reasonId: holdReasonId, note: 'Test' }, db)).rejects.toMatchObject({ problem: 'WRONG_KIND' });
   });
 
   it('rejects disqualifying already DISQUALIFIED lead', async () => {

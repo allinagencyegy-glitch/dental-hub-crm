@@ -1,4 +1,5 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { getLeadDetailAction, getDisqualifyReasonsAction } from '@/server/crm/leads/actions';
 import {
   getOpportunityByLeadAction,
@@ -8,7 +9,10 @@ import { listAccountsAction } from '@/server/crm/accounts/actions';
 import { LeadDetailPage } from './LeadDetailPage';
 import { notFound } from 'next/navigation';
 
-export const metadata = { title: 'Lead Detail | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.leads.detail.pageTitle) };
+}
 
 interface LeadDetailPageProps {
   params: Promise<{ id: string }>;
