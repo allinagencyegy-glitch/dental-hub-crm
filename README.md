@@ -117,26 +117,47 @@ Further reading:
 
 `deploy/setup.sh` turns a fresh Ubuntu 24.04 server into a running CRM in one
 command. It installs Node.js 22, PostgreSQL 17 and Caddy, creates the database
-with a random password (kept in `.env`, readable only by the app user), builds
-the app, runs it under systemd with automatic restart, serves it over HTTPS
-with a certificate Caddy obtains and renews itself, and closes the firewall to
-everything except SSH, HTTP and HTTPS.
+with a random password (kept in `/var/lib/dentalhub/shared/.env`, readable only
+by the app user), builds the app, runs it under systemd with automatic restart,
+serves it over HTTPS with a certificate Caddy obtains and renews itself, and
+closes the firewall to everything except SSH, HTTP and HTTPS.
 
 ```bash
 git clone <repository URL> /opt/dental-hub-crm
 sudo bash /opt/dental-hub-crm/deploy/setup.sh --domain crm.example.com --email you@example.com
-cd /opt/dental-hub-crm && sudo -u dentalhub npm run admin:create
+cd /var/lib/dentalhub/current && sudo -u dentalhub npm run admin:create
 ```
 
 Point the domain's DNS A record at the server; Caddy issues the certificate as
 soon as the record works. The script is safe to run again and keeps the
-existing database and `.env`. Clone outside `/home` and `/root`, which the
-service cannot see. `bash deploy/setup.sh --help` lists the options.
+existing database and `.env`. `bash deploy/setup.sh --help` lists the options.
 
 `admin:create` makes the first admin, who then adds the rest of the team from
 **Settings → Users**. It refuses while an active admin already exists; if every
 admin is locked out, `npm run admin:create -- --force` adds another one. Never
 run either seed script on the server.
+
+### Updating
+
+```bash
+sudo bash /opt/dental-hub-crm/deploy/update.sh
+```
+
+This pulls the latest commit and builds it in a new folder under
+`/var/lib/dentalhub/releases/` while the current version keeps serving. It then
+applies migrations, points `/var/lib/dentalhub/current` at the new release and
+restarts the service. The site is down only for the few seconds of that
+restart.
+
+- A failed build or migration changes nothing; the running version stays.
+- A new release that does not pass `/api/health` within 30 seconds is replaced
+  by the previous one straight away.
+- `update.sh --rollback` goes back to the last release that ran healthily.
+  Migrations are not undone, so migrations must stay backward compatible
+  (add columns and tables; do not drop or rename what the previous release
+  still reads).
+- `--ref <tag or commit>` deploys a specific version; `--help` lists the rest.
+- Only one update runs at a time, and the last three releases are kept.
 
 ## Known environment constraint
 
