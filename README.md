@@ -115,6 +115,9 @@ Further reading:
 
 ## Deploying to a server
 
+A step-by-step guide in Arabic, from buying the server and domain to backups,
+is in [docs/DEPLOY-AR.md](docs/DEPLOY-AR.md).
+
 `deploy/setup.sh` turns a fresh Ubuntu 24.04 server into a running CRM in one
 command. It installs Node.js 22, PostgreSQL 17 and Caddy, creates the database
 with a random password (kept in `/var/lib/dentalhub/shared/.env`, readable only
