@@ -8,14 +8,16 @@
 #   - sets the clock to Africa/Cairo and adds swap when the server has none
 #   - turns on automatic security updates, and fail2ban for SSH
 #   - installs Node.js 22, PostgreSQL 17 and Caddy from their official repositories
-#   - creates the database and a database role with a random password, kept in .env
-#   - creates the unprivileged `dentalhub` user that owns and runs the app
-#   - installs dependencies, applies migrations and builds the app
-#   - runs it under systemd on 127.0.0.1:3000, restarting it if it ever stops
+#   - creates the unprivileged `dentalhub` user that runs the app
+#   - creates the database and a database role with a random password, kept in
+#     /var/lib/dentalhub/shared/.env
+#   - builds the first release with deploy/update.sh and runs it under systemd
+#     on 127.0.0.1:3000, restarting it if it ever stops
 #   - puts Caddy in front for HTTPS (certificates are issued and renewed automatically)
 #   - closes the firewall to everything except SSH, HTTP and HTTPS
 #
 # Safe to run again. An existing database, password and .env are kept as they are.
+# Later code changes go out with deploy/update.sh, not with this script.
 #
 # Options:
 #   --domain NAME    the address the CRM will be served on (required)
@@ -25,23 +27,14 @@ set -Eeuo pipefail
 
 readonly NODE_MAJOR=22
 readonly PG_MAJOR=17
-readonly APP_USER=dentalhub
-readonly APP_HOME=/var/lib/dentalhub
-readonly APP_PORT=3000
-readonly SERVICE=dental-hub-crm
 readonly DB_NAME=dental_hub_crm
 readonly DB_USER=dental_hub_crm
 readonly TIMEZONE=Africa/Cairo
 readonly KEYRINGS=/etc/apt/keyrings
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly APP_DIR
-
-log() { printf '\n==> %s\n' "$*"; }
-warn() { printf 'WARNING: %s\n' "$*" >&2; }
-die() {
-  printf 'setup.sh: %s\n' "$*" >&2
-  exit 1
-}
+# shellcheck source=deploy/lib.sh
+. "$APP_DIR/deploy/lib.sh"
 trap 'die "stopped at line $LINENO: $BASH_COMMAND"' ERR
 
 usage() {
@@ -75,23 +68,17 @@ fi
 ((EUID == 0)) || die 'run this as root: sudo bash deploy/setup.sh ...'
 [[ -f "$APP_DIR/package.json" && -d "$APP_DIR/migrations" ]] ||
   die "$APP_DIR does not look like the dental-hub-crm checkout."
-# The service runs with ProtectHome, which hides /home and /root from it.
-[[ "$APP_DIR" != /home/* && "$APP_DIR" != /root/* ]] ||
-  die "clone the repository outside /home and /root, for example into /opt/dental-hub-crm."
 # shellcheck source=/dev/null
 . /etc/os-release
 [[ "${ID:-}" == ubuntu ]] || die 'this script supports Ubuntu only.'
 [[ "${VERSION_ID:-}" == 24.04 ]] || warn "tested on Ubuntu 24.04; this is ${PRETTY_NAME:-unknown}."
 
 export DEBIAN_FRONTEND=noninteractive
-readonly ENV_FILE="$APP_DIR/.env"
-readonly ENV_MARKER='# Written by deploy/setup.sh.'
 if [[ -f "$ENV_FILE" ]] && ! grep -qF "$ENV_MARKER" "$ENV_FILE"; then
   die "$ENV_FILE exists but was not written by this script. Move it away and run again; the script writes its own."
 fi
 # runuser keeps the working directory, and the postgres user cannot enter /root.
 cd /
-as_app() { runuser -u "$APP_USER" -- env HOME="$APP_HOME" NEXT_TELEMETRY_DISABLED=1 "$@"; }
 
 # ---------------------------------------------------------------------------
 log 'Base packages, timezone and automatic security updates'
@@ -142,6 +129,13 @@ node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [[ "$node_major" == "$NODE_MAJOR" ]] || die "expected Node.js $NODE_MAJOR, found $(node -v)."
 
 # ---------------------------------------------------------------------------
+log 'App user'
+if ! id "$APP_USER" >/dev/null 2>&1; then
+  useradd --system --home-dir "$APP_HOME" --create-home --shell /usr/sbin/nologin "$APP_USER"
+fi
+install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$(dirname "$ENV_FILE")"
+
+# ---------------------------------------------------------------------------
 log 'Database'
 systemctl enable --now postgresql >/dev/null
 for _ in $(seq 1 30); do
@@ -169,27 +163,17 @@ else
   } >"$ENV_FILE"
   unset db_password
 fi
+chown "$APP_USER:$APP_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 if [[ "$(psql_admin -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" != 1 ]]; then
   psql_admin -c "CREATE DATABASE $DB_NAME OWNER $DB_USER"
 fi
 
 # ---------------------------------------------------------------------------
-log "App user and build in $APP_DIR"
-if ! id "$APP_USER" >/dev/null 2>&1; then
-  useradd --system --home-dir "$APP_HOME" --create-home --shell /usr/sbin/nologin "$APP_USER"
-fi
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-chmod 600 "$ENV_FILE"
-
-cd "$APP_DIR"
-as_app npm ci --no-audit --no-fund
-as_app npm run db:migrate
-as_app npm run build
-
-# ---------------------------------------------------------------------------
 log 'Service'
-cat >"/etc/systemd/system/$SERVICE.service" <<EOF
+unit_file="/etc/systemd/system/$SERVICE.service"
+cat >"$unit_file.new" <<EOF
 [Unit]
 Description=Dental Hub CRM
 After=network.target postgresql.service
@@ -199,11 +183,11 @@ Wants=postgresql.service
 Type=simple
 User=$APP_USER
 Group=$APP_USER
-WorkingDirectory=$APP_DIR
+WorkingDirectory=$CURRENT_LINK
 Environment=NODE_ENV=production
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=TZ=$TIMEZONE
-ExecStart=/usr/bin/node $APP_DIR/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port $APP_PORT
+ExecStart=/usr/bin/node $CURRENT_LINK/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port $APP_PORT
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -214,17 +198,22 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 EOF
+unit_changed=0
+if ! cmp -s "$unit_file.new" "$unit_file"; then
+  mv "$unit_file.new" "$unit_file"
+  unit_changed=1
+else
+  rm -f "$unit_file.new"
+fi
 systemctl daemon-reload
 systemctl enable "$SERVICE" >/dev/null
-systemctl restart "$SERVICE"
 
-health_url="http://127.0.0.1:$APP_PORT/api/health"
-for _ in $(seq 1 60); do
-  curl -fsS -o /dev/null "$health_url" 2>/dev/null && break
-  sleep 1
-done
-curl -fsS -o /dev/null "$health_url" ||
-  die "the app did not become healthy. See: journalctl -u $SERVICE -n 50"
+# Builds and starts the commit this checkout is on. Already running it: no-op.
+bash "$APP_DIR/deploy/update.sh" --no-fetch
+if ((unit_changed)) || ! systemctl is-active --quiet "$SERVICE"; then
+  systemctl restart "$SERVICE"
+fi
+wait_healthy 60 || die "the app did not become healthy. See: journalctl -u $SERVICE -n 50"
 echo "The app is running and can reach its database."
 
 # ---------------------------------------------------------------------------
@@ -283,13 +272,14 @@ cat <<EOF
 
 Next step: create the first admin account (only once):
 
-  cd $APP_DIR && sudo -u $APP_USER npm run admin:create
+  cd $CURRENT_LINK && sudo -u $APP_USER npm run admin:create
 
 Then open https://$DOMAIN and sign in.
 
 Useful commands:
 EOF
-printf '  %-36s %s\n' \
+printf '  %-48s %s\n' \
+  "sudo bash $APP_DIR/deploy/update.sh" 'deploy the latest code' \
   "systemctl status $SERVICE" 'is the app running?' \
   "journalctl -u $SERVICE -f" "follow the app's log" \
   'journalctl -u caddy -n 50' 'HTTPS and certificate log'
