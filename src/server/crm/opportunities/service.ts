@@ -70,7 +70,7 @@ function getDb(db?: Db): Db {
 
 export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
 
-type FailureCode =
+export type FailureCode =
   | 'VALIDATION'
   | 'UNAUTHORISED'
   | 'NOT_FOUND'

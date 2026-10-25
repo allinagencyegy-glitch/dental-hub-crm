@@ -18,8 +18,11 @@ import {
   completeFollowUpUseCase,
   rescheduleFollowUpUseCase,
   getOpportunityActivityUseCase,
+  createLeadFollowUpUseCase,
   type Actor,
 } from '../../src/server/crm/opportunities/service';
+import { messagesFor } from '../../src/i18n/messages';
+import { activityTitle } from '../../src/i18n/activity';
 import { uniqueToken } from './setup/db';
 
 /**
@@ -179,6 +182,74 @@ describe('opportunity activity feed', () => {
     expect(ownerChange).toBeDefined();
     expect(ownerChange?.description).toBe('Owner changed to Activity Rep Bravo');
     expect(ownerChange?.metadata?.toOwnerUserId).toBe(repBId);
+    expect(ownerChange?.metadata?.toOwnerName).toBe('Activity Rep Bravo');
+  });
+
+  it('reads every kind of entry back in either language from its type and metadata', async () => {
+    const contact = await createContact(client, { fullName: uniqueToken('act-lang') });
+    const lead = await createLead(client, {
+      sourceId,
+      campaignId: null,
+      contactId: contact.id,
+      accountId: null,
+      productCategoryId: null,
+      note: null,
+      ownerUserId: repAId,
+    });
+    const promised = await createLeadFollowUpUseCase(
+      repA,
+      lead.id,
+      { actionType: 'WHATSAPP', dueAt: new Date(Date.now() + 3_600_000) },
+      client,
+    );
+    if (!promised.ok) throw new Error('setup failed');
+    const qualified = await qualifyLeadUseCase(manager, lead.id, {}, client);
+    if (!qualified.ok) throw new Error('setup failed');
+    const opportunityId = qualified.opportunity.id;
+
+    await advanceTo(opportunityId, 'PROPOSAL');
+    const created = await createFollowUpUseCase(
+      repA,
+      opportunityId,
+      { actionType: 'CALL', dueAt: new Date(Date.now() + 3_600_000) },
+      client,
+    );
+    if (!created.ok) throw new Error('setup failed');
+    await rescheduleFollowUpUseCase(repA, created.followUp.id, new Date(Date.now() + 7_200_000), client);
+    await completeFollowUpUseCase(repA, created.followUp.id, { completionNote: 'Spoke to the doctor' }, client);
+    await updateOpportunityUseCase(manager, opportunityId, { notes: 'Wants two chairs.' }, client);
+    await reassignOpportunityOwnerUseCase(manager, opportunityId, repBId, client);
+
+    const activity = await getOpportunityActivityUseCase(manager, opportunityId, client);
+    expect(new Set(activity.map((entry) => entry.activityType))).toEqual(
+      new Set([
+        'STAGE_CHANGE',
+        'FOLLOW_UP_MOVED',
+        'FOLLOW_UP_CREATED',
+        'FOLLOW_UP_RESCHEDULED',
+        'FOLLOW_UP_COMPLETED',
+        'NOTE_ADDED',
+        'OWNER_CHANGED',
+      ]),
+    );
+
+    // Rebuilt in English, each title is exactly the description stored with it.
+    const en = messagesFor('en');
+    for (const entry of activity) expect(activityTitle(entry, en)).toBe(entry.description);
+
+    const ar = messagesFor('ar');
+    expect(activity.map((entry) => activityTitle(entry, ar)).sort()).toEqual(
+      [
+        'تم التحويل إلى فرصة',
+        'نُقلت متابعة معلّقة من العميل المحتمل',
+        'انتقلت المرحلة من «مؤهلة» إلى «تقديم العرض»',
+        'جدولة متابعة: مكالمة',
+        'تغيير موعد متابعة: مكالمة',
+        'إنهاء متابعة: مكالمة',
+        'تم تحديث ملاحظات البيع',
+        'أصبح المسؤول Activity Rep Bravo',
+      ].sort(),
+    );
   });
 
   it('records a notes update but not a value-only edit', async () => {

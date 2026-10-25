@@ -22,6 +22,7 @@ import {
 import {
   getDashboardUseCase,
   getPipelineBoardUseCase,
+  getSourceOptionsUseCase,
   type DashboardInput,
 } from '../../src/server/crm/dashboard/service';
 import { uniqueToken } from './setup/db';
@@ -995,6 +996,11 @@ describe('pipeline + management dashboard', () => {
       expect(card!.latestQuotation?.status).toBe('DRAFT');
       expect(card!.latestQuotation?.quoteNumber).toBe(created.quotation.quoteNumber);
       expect(card!.ownerName).toBe('Rep Alpha');
+    });
+
+    it('offers the source filter with each source code, so it can be shown translated', async () => {
+      const options = await getSourceOptionsUseCase(client);
+      expect(options).toContainEqual(expect.objectContaining({ code: 'whatsapp', name: 'WhatsApp' }));
     });
   });
 });

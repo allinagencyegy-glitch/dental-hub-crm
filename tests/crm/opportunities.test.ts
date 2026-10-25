@@ -21,6 +21,7 @@ import {
   getOpportunityStageHistoryUseCase,
   getNextPendingFollowUpUseCase,
   getFollowUpWindowCountsUseCase,
+  getOpportunityDetailUseCase,
   type Actor,
 } from '../../src/server/crm/opportunities/service';
 import { uniqueToken } from './setup/db';
@@ -39,6 +40,7 @@ describe('opportunities and follow-ups (use cases)', () => {
   let adminId: string;
   let contactId: string;
   let categoryId: string;
+  let categoryCode: string;
   let sourceId: string;
   let lostReasonId: string;
   let lostReasonNeedingNoteId: string;
@@ -98,9 +100,8 @@ describe('opportunities and follow-ups (use cases)', () => {
     manager.userId = managerId;
     admin.userId = adminId;
 
-    categoryId = (
-      await createProductCategory(client, { code: uniqueToken('cat'), name: 'Implants' })
-    ).id;
+    categoryCode = uniqueToken('cat');
+    categoryId = (await createProductCategory(client, { code: categoryCode, name: 'Implants' })).id;
     contactId = (await createContact(client, { fullName: 'Patient Contact' })).id;
 
     const { rows: sourceRows } = await client.query<{ id: string }>(
@@ -284,6 +285,21 @@ describe('opportunities and follow-ups (use cases)', () => {
         client,
       );
       expect(result).toMatchObject({ ok: false, error: 'INVALID_TRANSITION' });
+    });
+
+    it('returns the catalog codes behind the detail labels, so the page can translate them', async () => {
+      const opportunity = await newOpportunity();
+      await changeOpportunityStageUseCase(manager, opportunity.id, { toStage: 'LOST', lostReasonId }, client);
+
+      const detail = await getOpportunityDetailUseCase(manager, opportunity.id, client);
+      expect(detail).toMatchObject({
+        leadSourceCode: 'website',
+        leadSourceName: 'Website',
+        productCategoryCode: categoryCode,
+        productCategoryName: 'Implants',
+        lostReasonCode: 'no_budget',
+        lostReasonLabel: 'No budget',
+      });
     });
 
     it('rejects an unknown stage name', async () => {

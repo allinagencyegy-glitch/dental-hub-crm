@@ -1,9 +1,13 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { getPipelineBoardAction, getSourceOptionsAction } from '@/server/crm/dashboard/actions';
 import { getOpportunityOwnersAction } from '@/server/crm/opportunities/actions';
 import { PipelineBoard } from './PipelineBoard';
 
-export const metadata = { title: 'Pipeline | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.pipeline.pageTitle) };
+}
 
 async function getPipelineData() {
   const session = await requirePermission('opportunities:read');

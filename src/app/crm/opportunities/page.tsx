@@ -1,4 +1,5 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import {
   listOpportunitiesAction,
   getPipelineCountsAction,
@@ -8,7 +9,10 @@ import { OPPORTUNITY_STAGES } from '@/server/crm/opportunities/stage';
 import type { OpportunityStageFilter } from '@/server/crm/opportunities/repository';
 import { OpportunitiesList } from './OpportunitiesList';
 
-export const metadata = { title: 'Opportunities | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.opportunities.list.pageTitle) };
+}
 
 const VALID_STAGE_FILTERS = ['OPEN', 'ALL', 'WON', 'LOST', ...OPPORTUNITY_STAGES] as const;
 type StageFilter = (typeof VALID_STAGE_FILTERS)[number];

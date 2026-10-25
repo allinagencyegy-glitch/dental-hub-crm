@@ -13,21 +13,17 @@ import {
   rescheduleFollowUpAction,
   updateOpportunityAction,
 } from '@/server/crm/opportunities/actions';
-import {
-  STAGE_LABELS,
-  isTerminalStage,
-  type OpportunityStage,
-} from '@/server/crm/opportunities/stage';
-import {
-  ACTION_TYPE_LABELS,
-  FOLLOW_UP_ACTION_TYPES,
-  type FollowUpActionType,
-} from '@/server/crm/opportunities/followup-actions';
+import { isTerminalStage, type OpportunityStage } from '@/server/crm/opportunities/stage';
+import { FOLLOW_UP_ACTION_TYPES, type FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import type { LeadStatus } from '@/server/crm/leads/repository';
 import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/opportunities/repository';
 import type { OpportunityActivityEntry } from '@/server/crm/opportunities/repository';
 import type { StageHistoryEntry } from '@/server/crm/opportunities/repository';
 import type { FollowUp } from '@/server/crm/opportunities/followups';
 import type { QuotationListItem } from '@/server/crm/quotations/repository';
+import { useFormatters, useMessages } from '@/i18n/I18nProvider';
+import { catalogLabel } from '@/i18n/format';
+import { activityTitle } from '@/i18n/activity';
 
 type Role = 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
 
@@ -82,15 +78,6 @@ const STAGE_CHIP: Record<OpportunityStage, string> = {
   LOST: 'bg-[#ffe9ea] text-[#c43f47]',
 };
 
-function formatEgp(value: number | null): string {
-  if (value === null) return 'Not set';
-  return value.toLocaleString('en-EG', {
-    style: 'currency',
-    currency: 'EGP',
-    maximumFractionDigits: 0,
-  });
-}
-
 /** datetime-local wants "YYYY-MM-DDTHH:mm" in the browser's own timezone. */
 function toLocalInputValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -111,6 +98,19 @@ export function OpportunityDetail({
   now,
 }: OpportunityDetailProps) {
   const router = useRouter();
+  const m = useMessages();
+  const format = useFormatters();
+  const t = m.opportunities.detail;
+  const formatEgp = (value: number | null) => (value === null ? t.notSet : format.currency(value));
+  const sourceName = catalogLabel(m.catalog.sources, opportunity.leadSourceCode, opportunity.leadSourceName);
+  const productCategory = opportunity.productCategoryName
+    ? catalogLabel(m.catalog.productCategories, opportunity.productCategoryCode, opportunity.productCategoryName)
+    : null;
+  const lostReason = opportunity.lostReasonLabel
+    ? catalogLabel(m.catalog.lostReasons, opportunity.lostReasonCode, opportunity.lostReasonLabel)
+    : null;
+  const closedAt = opportunity.wonAt ?? opportunity.lostAt;
+  const leadStatus = opportunity.leadStatus as LeadStatus;
 
   const latestQuotation = quotations.length > 0 ? quotations[quotations.length - 1] : null;
 
@@ -185,8 +185,8 @@ export function OpportunityDetail({
         key: entry.id,
         at: entry.createdAt,
         icon: ACTIVITY_ICON[entry.activityType],
-        title: entry.description,
-        detail: entry.actorName ? `by ${entry.actorName}` : undefined,
+        title: activityTitle(entry, m),
+        detail: entry.actorName ? t.by(entry.actorName) : undefined,
         followUp: followUpId ? followUpById.get(followUpId) : undefined,
       });
     }
@@ -194,11 +194,11 @@ export function OpportunityDetail({
       key: 'lead-created',
       at: opportunity.leadReceivedAt,
       icon: 'leads',
-      title: `Lead received from ${opportunity.leadSourceName}`,
+      title: t.leadReceived(sourceName),
       detail: opportunity.contactName,
     });
     return events.sort((a, b) => b.at.getTime() - a.at.getTime());
-  }, [activity, followUpById, opportunity.leadReceivedAt, opportunity.leadSourceName, opportunity.contactName]);
+  }, [activity, followUpById, opportunity.leadReceivedAt, sourceName, opportunity.contactName, m, t]);
 
   const nextAction = pending[0] ?? null;
   const isOverdue = nextAction !== null && nextAction.dueAt.getTime() < now;
@@ -211,13 +211,13 @@ export function OpportunityDetail({
     try {
       const result = await action();
       if (result && result.ok === false) {
-        setError(result.message ?? 'That action could not be completed.');
+        setError(result.message ?? m.followUp.actionFailed);
         return;
       }
       setNotice(success);
       router.refresh();
     } catch {
-      setError('That action could not be completed.');
+      setError(m.followUp.actionFailed);
     } finally {
       setBusy(false);
     }
@@ -230,18 +230,18 @@ export function OpportunityDetail({
     }
     void run(
       () => changeOpportunityStageAction(opportunity.id, { toStage }),
-      `Stage moved to ${STAGE_LABELS[toStage]}.`,
+      t.stageMoved(m.opportunityStage[toStage]),
     );
   };
 
   const handleConfirmLost = (event: FormEvent) => {
     event.preventDefault();
     if (!lostReasonId) {
-      setError('Select a reason for losing this opportunity.');
+      setError(t.lostReasonRequired);
       return;
     }
     if (needsLostNote && !lostNote.trim()) {
-      setError('This reason requires a short note.');
+      setError(t.lostNoteRequired);
       return;
     }
     void run(
@@ -251,7 +251,7 @@ export function OpportunityDetail({
           lostReasonId,
           lostNote: lostNote.trim() || null,
         }),
-      'Opportunity marked as lost. Its activity history is preserved.',
+      t.markedLost,
     ).then(() => setLosing(false));
   };
 
@@ -269,11 +269,11 @@ export function OpportunityDetail({
     event.preventDefault();
     if (!completing) return;
     if (!completionNote.trim()) {
-      setError('Add a short outcome before completing.');
+      setError(m.followUp.outcomeRequired);
       return;
     }
     if (scheduleNext && !nextDueAt) {
-      setError('Choose when the next action is due.');
+      setError(t.chooseNextDue);
       return;
     }
     setBusy(true);
@@ -302,11 +302,11 @@ export function OpportunityDetail({
           return;
         }
       }
-      setNotice(scheduleNext ? 'Action completed and the next one scheduled.' : 'Action completed.');
+      setNotice(scheduleNext ? t.actionCompletedNext : t.actionCompleted);
       setCompleting(null);
       router.refresh();
     } catch {
-      setError('That action could not be completed.');
+      setError(m.followUp.actionFailed);
     } finally {
       setBusy(false);
     }
@@ -314,7 +314,7 @@ export function OpportunityDetail({
 
   const handleReschedule = (followUp: FollowUp) => {
     if (!rescheduleDueAt) {
-      setError('Choose a new due date and time.');
+      setError(m.followUp.chooseNewDue);
       return;
     }
     const dueAt = new Date(rescheduleDueAt);
@@ -324,14 +324,14 @@ export function OpportunityDetail({
     }
     void run(
       () => rescheduleFollowUpAction(followUp.id, dueAt.toISOString()),
-      'Action rescheduled.',
+      t.actionRescheduled,
     ).then(() => setReschedulingId(null));
   };
 
   const handleSchedule = (event: FormEvent) => {
     event.preventDefault();
     if (!actionDueAt) {
-      setError('Choose when this action is due.');
+      setError(m.followUp.chooseDue);
       return;
     }
     const dueAt = new Date(actionDueAt);
@@ -346,7 +346,7 @@ export function OpportunityDetail({
           note: actionNote.trim() || null,
           dueAt: dueAt.toISOString(),
         }),
-      'Next action scheduled.',
+      t.actionScheduled,
     ).then(() => {
       setActionNote('');
       setShowSchedule(false);
@@ -357,12 +357,12 @@ export function OpportunityDetail({
     event.preventDefault();
     const parsed = estimatedValue.trim() === '' ? null : Number(estimatedValue);
     if (parsed !== null && (Number.isNaN(parsed) || parsed < 0)) {
-      setError('Estimated value must be zero or more.');
+      setError(t.valueInvalid);
       return;
     }
     void run(
       () => updateOpportunityAction(opportunity.id, { estimatedValue: parsed, notes }),
-      'Opportunity details saved.',
+      t.detailsSaved,
     ).then(() => setEditing(false));
   };
 
@@ -370,13 +370,13 @@ export function OpportunityDetail({
     if (!ownerUserId || ownerUserId === opportunity.ownerUserId) return;
     void run(
       () => reassignOpportunityOwnerAction(opportunity.id, ownerUserId),
-      'Opportunity reassigned.',
+      t.reassigned,
     );
   };
 
   return (
     <>
-      <BackLink href="/crm/opportunities" label="Back to opportunities" />
+      <BackLink href="/crm/opportunities" label={t.back} />
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
@@ -385,18 +385,18 @@ export function OpportunityDetail({
               {opportunity.accountName ?? opportunity.contactName}
             </h1>
             <span
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.08em] ${
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${
                 STAGE_CHIP[opportunity.stage]
               }`}
             >
-              {STAGE_LABELS[opportunity.stage].toUpperCase()}
+              {m.opportunityStage[opportunity.stage]}
             </span>
           </div>
           <p className="mt-1 text-[11px] text-[#596872]">
-            {opportunity.productCategoryName ?? 'No product category set'}
+            {productCategory ?? t.noCategory}
           </p>
           <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-[#9aa3aa]">
-            Opportunity {opportunity.id.slice(0, 8)} · from {opportunity.leadSourceName}
+            {t.reference(opportunity.id.slice(0, 8), sourceName)}
           </p>
         </div>
 
@@ -405,7 +405,7 @@ export function OpportunityDetail({
           className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
         >
           <CrmIcon name="leads" className="h-3.5 w-3.5" />
-          View source lead
+          {t.viewLead}
         </Link>
       </div>
 
@@ -429,15 +429,15 @@ export function OpportunityDetail({
           }`}
         >
           <p className="text-[11px] font-semibold text-[#35434c]">
-            This opportunity is {STAGE_LABELS[opportunity.stage].toLowerCase()}.
-            {opportunity.wonAt ? ` Closed on ${opportunity.wonAt.toLocaleDateString()}.` : null}
-            {opportunity.lostAt ? ` Closed on ${opportunity.lostAt.toLocaleDateString()}.` : null}
-            {opportunity.lostReasonLabel ? ` Reason: ${opportunity.lostReasonLabel}.` : null}
+            {[
+              opportunity.stage === 'WON' ? t.closedWon : t.closedLost,
+              closedAt ? t.closedOn(format.date(closedAt)) : null,
+              lostReason ? t.lostReason(lostReason) : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
           </p>
-          <p className="mt-1 text-[10px] text-[#6c7a83]">
-            {completed.length} action{completed.length === 1 ? '' : 's'} completed and kept on
-            record. A closed deal cannot be reopened — capture a new lead to try again.
-          </p>
+          <p className="mt-1 text-[10px] text-[#6c7a83]">{t.closedKept(completed.length)}</p>
         </div>
       ) : null}
 
@@ -460,7 +460,7 @@ export function OpportunityDetail({
                   className={`h-4 w-4 ${isOverdue ? 'text-[#bd3d45]' : 'text-[#5f7b78]'}`}
                 />
                 <h2 className="text-xs font-semibold text-[#2b3841]">
-                  {isOverdue ? 'Overdue next action' : 'Next action'}
+                  {isOverdue ? t.overdueNextAction : t.nextAction}
                 </h2>
               </div>
               {!isClosed ? (
@@ -470,7 +470,7 @@ export function OpportunityDetail({
                   className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#128c80] transition hover:text-[#0b7268]"
                 >
                   <CrmIcon name="plus" className="h-3 w-3" />
-                  {nextAction ? 'Add another action' : 'Set next action'}
+                  {nextAction ? t.addAnother : t.setNext}
                 </button>
               ) : null}
             </div>
@@ -479,7 +479,7 @@ export function OpportunityDetail({
               <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[15px] font-semibold text-[#3f2b2d]">
-                    {ACTION_TYPE_LABELS[nextAction.actionType]}
+                    {m.followUpTypes[nextAction.actionType]}
                   </p>
                   {nextAction.note ? (
                     <p className="mt-1.5 max-w-[420px] text-[10px] leading-4 text-[#836467]">
@@ -491,8 +491,7 @@ export function OpportunityDetail({
                       isOverdue ? 'text-[#bd454b]' : 'text-[#829098]'
                     }`}
                   >
-                    Due {nextAction.dueAt.toLocaleDateString()} at{' '}
-                    {nextAction.dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {t.dueAt(format.date(nextAction.dueAt), format.time(nextAction.dueAt))}
                   </p>
                 </div>
                 <button
@@ -501,13 +500,12 @@ export function OpportunityDetail({
                   onClick={() => openComplete(nextAction)}
                   className="rounded-lg bg-[#16232c] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#22323c] disabled:opacity-60"
                 >
-                  Complete action
+                  {t.completeAction}
                 </button>
               </div>
             ) : (
               <p className="mt-3 text-[11px] text-[#8a6b48]">
-                No next action scheduled. An open opportunity without a due action is work nobody
-                will pick up.
+                {t.noNextAction}
               </p>
             )}
 
@@ -516,7 +514,7 @@ export function OpportunityDetail({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                      Action type
+                      {t.actionType}
                     </span>
                     <select
                       value={actionType}
@@ -525,14 +523,14 @@ export function OpportunityDetail({
                     >
                       {FOLLOW_UP_ACTION_TYPES.map((type) => (
                         <option key={type} value={type}>
-                          {ACTION_TYPE_LABELS[type]}
+                          {m.followUpTypes[type]}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                      Due
+                      {t.due}
                     </span>
                     <input
                       type="datetime-local"
@@ -544,13 +542,13 @@ export function OpportunityDetail({
                 </div>
                 <label className="block">
                   <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                    Note
+                    {t.note}
                   </span>
                   <textarea
                     value={actionNote}
                     onChange={(event) => setActionNote(event.target.value)}
                     rows={2}
-                    placeholder="What needs to happen, and what does done look like?"
+                    placeholder={t.notePlaceholder}
                     className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 py-2 text-[11px] text-[#3c4a54] outline-none placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
                   />
                 </label>
@@ -560,14 +558,14 @@ export function OpportunityDetail({
                     disabled={busy}
                     className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                   >
-                    Schedule action
+                    {t.scheduleAction}
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowSchedule(false)}
                     className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
-                    Cancel
+                    {m.common.cancel}
                   </button>
                 </div>
               </form>
@@ -576,32 +574,28 @@ export function OpportunityDetail({
 
           {/* Stage movement. Only legal transitions are offered. */}
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
-            <h2 className="text-sm font-semibold text-[#202d35]">Stage</h2>
-            <p className="mt-0.5 text-[10px] text-[#8c969d]">
-              {isClosed
-                ? 'This deal is closed and cannot change stage. Its history stays on record.'
-                : 'Only the stages this deal can move to are shown. Marking it won or lost closes it.'}
-            </p>
+            <h2 className="text-sm font-semibold text-[#202d35]">{t.stage}</h2>
+            <p className="mt-0.5 text-[10px] text-[#8c969d]">{isClosed ? t.stageClosedHint : t.stageOpenHint}</p>
 
             {isClosed ? (
               <p className="mt-4 text-[11px] text-[#6c7a83]">
-                Closed as {STAGE_LABELS[opportunity.stage].toLowerCase()}.
+                {opportunity.stage === 'WON' ? t.closedAsWon : t.closedAsLost}
               </p>
             ) : losing ? (
               <form onSubmit={handleConfirmLost} className="mt-4 space-y-3">
                 <label className="block">
                   <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                    Why was it lost?
+                    {t.whyLost}
                   </span>
                   <select
                     value={lostReasonId}
                     onChange={(event) => setLostReasonId(event.target.value)}
                     className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-medium text-[#3c4a54] outline-none focus:border-[#18b6a4]"
                   >
-                    <option value="">Select a reason…</option>
+                    <option value="">{t.selectReason}</option>
                     {lostReasons.map((reason) => (
                       <option key={reason.id} value={reason.id}>
-                        {reason.label}
+                        {catalogLabel(m.catalog.lostReasons, reason.code, reason.label)}
                       </option>
                     ))}
                   </select>
@@ -609,7 +603,7 @@ export function OpportunityDetail({
                 {needsLostNote ? (
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                      Note (required)
+                      {t.noteRequired}
                     </span>
                     <textarea
                       value={lostNote}
@@ -625,7 +619,7 @@ export function OpportunityDetail({
                     disabled={busy}
                     className="rounded-lg bg-[#b83c43] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#a5343b] disabled:opacity-60"
                   >
-                    Confirm lost
+                    {t.confirmLost}
                   </button>
                   <button
                     type="button"
@@ -636,14 +630,14 @@ export function OpportunityDetail({
                     }}
                     className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
-                    Cancel
+                    {m.common.cancel}
                   </button>
                 </div>
               </form>
             ) : (
               <div className="mt-4 flex flex-wrap gap-2">
                 {allowedStages.length === 0 ? (
-                  <p className="text-[11px] text-[#6c7a83]">No further stage changes are possible.</p>
+                  <p className="text-[11px] text-[#6c7a83]">{t.noFurtherStages}</p>
                 ) : (
                   allowedStages.map((stage) => (
                     <button
@@ -665,10 +659,10 @@ export function OpportunityDetail({
                       {stage === 'ON_HOLD' ? <CrmIcon name="pause" className="h-3.5 w-3.5" /> : null}
                       {stage === 'LOST' ? <CrmIcon name="x" className="h-3.5 w-3.5" /> : null}
                       {stage === 'WON'
-                        ? 'Mark as won'
+                        ? t.markWon
                         : stage === 'LOST'
-                          ? 'Mark as lost'
-                          : `Move to ${STAGE_LABELS[stage]}`}
+                          ? t.markLost
+                          : t.moveTo(m.opportunityStage[stage])}
                     </button>
                   ))
                 )}
@@ -679,12 +673,8 @@ export function OpportunityDetail({
           {/* Quotation workspace: the commercial document history of this deal. */}
           <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <SectionTitle
-              title="Quotations"
-              subtitle={
-                quotations.length === 0
-                  ? 'No quotation created yet'
-                  : `${quotations.length} quotation${quotations.length === 1 ? '' : 's'} on record`
-              }
+              title={t.quotations}
+              subtitle={quotations.length === 0 ? t.noQuotationYet : t.quotationsOnRecord(quotations.length)}
             />
             <div className="px-5 py-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -694,7 +684,7 @@ export function OpportunityDetail({
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#132932] px-3 text-[11px] font-semibold text-white transition hover:bg-[#1b3944]"
                   >
                     <CrmIcon name="plus" className="h-3.5 w-3.5" />
-                    New quotation
+                    {t.newQuotation}
                   </Link>
                 ) : null}
                 {latestQuotation ? (
@@ -703,16 +693,14 @@ export function OpportunityDetail({
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
                     <CrmIcon name="quotation" className="h-3.5 w-3.5" />
-                    Open latest
+                    {t.openLatest}
                   </Link>
                 ) : null}
               </div>
 
               {quotations.length === 0 ? (
                 <p className="mt-4 text-[11px] leading-5 text-[#8b969e]">
-                  {isClosed
-                    ? 'This deal is closed, so no new quotation can be created.'
-                    : 'Create a quotation to price the equipment for this customer. Quotations stay on the record forever — sent, accepted and rejected alike.'}
+                  {isClosed ? t.quotationsClosed : t.quotationsHint}
                 </p>
               ) : (
                 <ul className="mt-3 divide-y divide-[#edf0f1]">
@@ -730,26 +718,20 @@ export function OpportunityDetail({
                         </span>
                       ) : null}
                       <span
-                        className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.06em] ${QUOTATION_STATUS_CHIP[quotation.status]}`}
+                        className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${QUOTATION_STATUS_CHIP[quotation.status]}`}
                       >
-                        {quotation.status}
+                        {m.quotationStatus[quotation.status]}
                       </span>
                       {quotation.previousQuoteNumber ? (
-                        <span className="text-[9px] text-[#9aa3aa]">
-                          revises {quotation.previousQuoteNumber}
-                        </span>
+                        <span className="text-[9px] text-[#9aa3aa]">{t.revises(quotation.previousQuoteNumber)}</span>
                       ) : null}
                       <span className="ms-auto whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
-                        {quotation.totalAmount.toLocaleString('en-EG', {
-                          style: 'currency',
-                          currency: 'EGP',
-                          maximumFractionDigits: 0,
-                        })}
+                        {format.currency(quotation.totalAmount)}
                       </span>
                       <span className="text-[9px] text-[#929da4]">
                         {quotation.sentAt
-                          ? `sent ${quotation.sentAt.toLocaleDateString()}`
-                          : `updated ${quotation.updatedAt.toLocaleDateString()}`}
+                          ? t.sentOn(format.date(quotation.sentAt))
+                          : t.updatedOn(format.date(quotation.updatedAt))}
                       </span>
                     </li>
                   ))}
@@ -760,14 +742,14 @@ export function OpportunityDetail({
 
           {/* Commercial details. */}
           <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
-            <SectionTitle title="Opportunity details" subtitle="Ownership and commercial fields" />
+            <SectionTitle title={t.details} subtitle={t.detailsSubtitle} />
             <div className="px-5 py-4">
               {editing ? (
                 <form onSubmit={handleSaveDetails} className="space-y-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                        Estimated value (EGP)
+                        {t.estimatedValueEgp}
                       </span>
                       <input
                         type="number"
@@ -780,7 +762,7 @@ export function OpportunityDetail({
                     </label>
                     <div>
                       <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                        Owner
+                        {t.owner}
                       </span>
                       <p className="mt-1.5 flex h-9 items-center text-[11px] font-medium text-[#3c4a54]">
                         {opportunity.ownerName}
@@ -789,7 +771,7 @@ export function OpportunityDetail({
                   </div>
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
-                      Notes
+                      {t.notes}
                     </span>
                     <textarea
                       value={notes}
@@ -804,7 +786,7 @@ export function OpportunityDetail({
                       disabled={busy}
                       className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                     >
-                      Save details
+                      {t.saveDetails}
                     </button>
                     <button
                       type="button"
@@ -817,30 +799,27 @@ export function OpportunityDetail({
                       }}
                       className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                     >
-                      Cancel
+                      {m.common.cancel}
                     </button>
                   </div>
                 </form>
               ) : (
                 <>
                   <div className="grid gap-x-8 sm:grid-cols-2">
-                    <DetailLine label="Estimated value" value={formatEgp(opportunity.estimatedValue)} />
-                    <DetailLine label="Primary contact" value={opportunity.contactName} />
+                    <DetailLine label={t.estimatedValue} value={formatEgp(opportunity.estimatedValue)} />
+                    <DetailLine label={t.primaryContact} value={opportunity.contactName} />
+                    <DetailLine label={t.account} value={opportunity.accountName ?? t.noAccount} />
+                    <DetailLine label={t.productInterest} value={productCategory ?? t.notSet} />
+                    <DetailLine label={t.owner} value={opportunity.ownerName} />
                     <DetailLine
-                      label="Account"
-                      value={opportunity.accountName ?? 'No account linked'}
+                      label={t.sourceLeadStatus}
+                      value={Object.hasOwn(m.leadStatus, leadStatus) ? m.leadStatus[leadStatus] : opportunity.leadStatus}
                     />
-                    <DetailLine
-                      label="Product interest"
-                      value={opportunity.productCategoryName ?? 'Not set'}
-                    />
-                    <DetailLine label="Owner" value={opportunity.ownerName} />
-                    <DetailLine label="Source lead status" value={opportunity.leadStatus} />
                   </div>
                   {opportunity.notes ? (
                     <div className="mt-3 rounded-lg bg-[#f6f8f9] p-4">
                       <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#929ca3]">
-                        Sales context
+                        {t.salesContext}
                       </p>
                       <p className="mt-2 whitespace-pre-line text-[11px] leading-5 text-[#46545d]">
                         {opportunity.notes}
@@ -854,17 +833,17 @@ export function OpportunityDetail({
                       className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                     >
                       <CrmIcon name="edit" className="h-3.5 w-3.5" />
-                      Edit details
+                      {t.editDetails}
                     </button>
                     {canAssignOwner ? (
                       <label className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-[#7b8790]">Reassign to</span>
+                        <span className="text-[10px] font-semibold text-[#7b8790]">{t.reassignTo}</span>
                         <select
                           value=""
                           onChange={(event) => handleReassign(event.target.value)}
                           className="h-9 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-medium text-[#3c4a54] outline-none focus:border-[#18b6a4]"
                         >
-                          <option value="">Choose an owner…</option>
+                          <option value="">{t.chooseOwner}</option>
                           {owners
                             .filter((owner) => owner.id !== opportunity.ownerUserId)
                             .map((owner) => (
@@ -884,16 +863,16 @@ export function OpportunityDetail({
           {/* Unified activity timeline: lead arrival + every durable interaction. */}
           <section className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <SectionTitle
-              title="Activity timeline"
+              title={t.timeline}
               subtitle={
                 timeline.length > 0
-                  ? `Last interaction ${timeline[0].at.toLocaleDateString()} · ${completed.length} completed · ${pending.length} pending`
-                  : 'No interactions recorded yet'
+                  ? t.timelineSubtitle(format.date(timeline[0].at), completed.length, pending.length)
+                  : t.noInteractions
               }
             />
             {timeline.length === 0 ? (
               <p className="px-5 py-8 text-center text-[11px] text-[#89949c]">
-                No activity recorded yet.
+                {t.noActivity}
               </p>
             ) : (
               <div className="divide-y divide-[#edf0f1]">
@@ -923,29 +902,32 @@ export function OpportunityDetail({
                             {pendingFollowUp ? (
                               overdueFollowUp ? (
                                 <span className="ms-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#bd454b]">
-                                  Overdue
+                                  {m.followUp.overdue}
                                 </span>
                               ) : (
                                 <span className="ms-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#16877b]">
-                                  Pending
+                                  {m.followUp.pending}
                                 </span>
                               )
                             ) : null}
                           </p>
                           <span className="whitespace-nowrap text-[9px] text-[#929ca3]">
-                            {event.at.toLocaleDateString()} ·{' '}
-                            {event.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {format.date(event.at)} · {format.time(event.at)}
                           </span>
                         </div>
                         {followUp ? (
                           <p className="mt-1 text-[10px] leading-4 text-[#74818a]">
-                            {ACTION_TYPE_LABELS[followUp.actionType]}
-                            {pendingFollowUp
-                              ? ` · due ${followUp.dueAt.toLocaleDateString()} at ${followUp.dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                              : followUp.completedAt
-                                ? ` · done ${followUp.completedAt.toLocaleDateString()}`
-                                : null}
-                            {followUp.note ? ` · ${followUp.note}` : null}
+                            {[
+                              m.followUpTypes[followUp.actionType],
+                              pendingFollowUp
+                                ? t.followUpDue(format.date(followUp.dueAt), format.time(followUp.dueAt))
+                                : followUp.completedAt
+                                  ? t.followUpDone(format.date(followUp.completedAt))
+                                  : null,
+                              followUp.note,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </p>
                         ) : event.detail ? (
                           <p className="mt-1 text-[10px] leading-4 text-[#74818a]">{event.detail}</p>
@@ -956,7 +938,7 @@ export function OpportunityDetail({
                           <div className="flex shrink-0 items-center gap-1.5 self-center">
                             <input
                               type="datetime-local"
-                              aria-label="New due date"
+                              aria-label={m.followUp.newDueDate}
                               value={rescheduleDueAt}
                               onChange={(event) => setRescheduleDueAt(event.target.value)}
                               className="h-7 rounded-md border border-[#dfe4e7] bg-white px-2 text-[9px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
@@ -967,14 +949,14 @@ export function OpportunityDetail({
                               onClick={() => handleReschedule(followUp)}
                               className="h-7 shrink-0 rounded-md bg-[#132932] px-2.5 text-[9px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                             >
-                              Save
+                              {m.followUp.save}
                             </button>
                             <button
                               type="button"
                               onClick={() => setReschedulingId(null)}
                               className="h-7 shrink-0 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
                             >
-                              Cancel
+                              {m.common.cancel}
                             </button>
                           </div>
                         ) : (
@@ -988,7 +970,7 @@ export function OpportunityDetail({
                               }}
                               className="h-7 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa] disabled:opacity-60"
                             >
-                              Reschedule
+                              {m.followUp.reschedule}
                             </button>
                             <button
                               type="button"
@@ -996,7 +978,7 @@ export function OpportunityDetail({
                               onClick={() => openComplete(followUp)}
                               className="h-7 shrink-0 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa] disabled:opacity-60"
                             >
-                              Complete
+                              {m.followUp.complete}
                             </button>
                           </div>
                         )
@@ -1011,7 +993,7 @@ export function OpportunityDetail({
 
         <aside className="min-w-0 space-y-4">
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
-            <h2 className="text-xs font-semibold text-[#2b3841]">Primary contact</h2>
+            <h2 className="text-xs font-semibold text-[#2b3841]">{t.primaryContact}</h2>
             <div className="mt-4 flex items-center gap-3">
               <Avatar name={opportunity.contactName} size="md" />
               <div className="min-w-0">
@@ -1019,12 +1001,15 @@ export function OpportunityDetail({
                   {opportunity.contactName}
                 </p>
                 {opportunity.contactEmail ? (
-                  <p className="truncate text-[9px] text-[#909aa1]">{opportunity.contactEmail}</p>
+                  <p dir="ltr" className="truncate text-start text-[9px] text-[#909aa1]">
+                    {opportunity.contactEmail}
+                  </p>
                 ) : null}
                 {opportunity.contactPhone ? (
                   <p className="mt-0.5 flex items-center gap-1.5">
                     <a
                       href={`tel:${opportunity.contactPhone}`}
+                      dir="ltr"
                       className="truncate text-[9px] font-semibold text-[#188c81] hover:underline"
                     >
                       {opportunity.contactPhone}
@@ -1036,7 +1021,7 @@ export function OpportunityDetail({
                         rel="noreferrer"
                         className="rounded-full bg-[#e8f8f1] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] text-[#14815f]"
                       >
-                        WhatsApp
+                        {m.followUpTypes.WHATSAPP}
                       </a>
                     ) : null}
                   </p>
@@ -1047,9 +1032,9 @@ export function OpportunityDetail({
 
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xs font-semibold text-[#2b3841]">Open work</h2>
+              <h2 className="text-xs font-semibold text-[#2b3841]">{t.openWork}</h2>
               <Link href="/crm/followups" className="text-[9px] font-bold text-[#128c80]">
-                All follow-ups
+                {t.allFollowUps}
               </Link>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-center">
@@ -1058,7 +1043,7 @@ export function OpportunityDetail({
                   {pending.length}
                 </p>
                 <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[#8b969e]">
-                  Pending
+                  {m.followUp.pending}
                 </p>
               </div>
               <div
@@ -1078,7 +1063,7 @@ export function OpportunityDetail({
                   {pending.filter((action) => action.dueAt.getTime() < now).length}
                 </p>
                 <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[#8b969e]">
-                  Overdue
+                  {m.followUp.overdue}
                 </p>
               </div>
             </div>
@@ -1086,8 +1071,8 @@ export function OpportunityDetail({
 
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xs font-semibold text-[#2b3841]">Commercial document</h2>
-              <Badge value="QUOTATION" />
+              <h2 className="text-xs font-semibold text-[#2b3841]">{t.commercialDocument}</h2>
+              <Badge value="QUOTATION" label={t.quotation} />
             </div>
             {latestQuotation ? (
               <div className="mt-4">
@@ -1099,23 +1084,19 @@ export function OpportunityDetail({
                     {latestQuotation.quoteNumber}
                   </Link>
                   <span
-                    className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold tracking-[0.06em] ${QUOTATION_STATUS_CHIP[latestQuotation.status]}`}
+                    className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] ${QUOTATION_STATUS_CHIP[latestQuotation.status]}`}
                   >
-                    {latestQuotation.status}
+                    {m.quotationStatus[latestQuotation.status]}
                   </span>
                 </div>
                 <p className="mt-2 text-[19px] font-semibold tracking-[-0.04em] text-[#17242d]">
-                  {latestQuotation.totalAmount.toLocaleString('en-EG', {
-                    style: 'currency',
-                    currency: 'EGP',
-                    maximumFractionDigits: 0,
-                  })}
+                  {format.currency(latestQuotation.totalAmount)}
                 </p>
                 <p className="mt-1 text-[9px] text-[#8b969e]">
                   {latestQuotation.sentAt
-                    ? `Sent ${latestQuotation.sentAt.toLocaleDateString()}`
-                    : `Updated ${latestQuotation.updatedAt.toLocaleDateString()}`}
-                  {latestQuotation.version > 1 ? ` · version ${latestQuotation.version}` : null}
+                    ? t.sentOn(format.date(latestQuotation.sentAt))
+                    : t.updatedOn(format.date(latestQuotation.updatedAt))}
+                  {latestQuotation.version > 1 ? ` · ${t.version(latestQuotation.version)}` : null}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   <Link
@@ -1123,33 +1104,29 @@ export function OpportunityDetail({
                     className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-2.5 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
                     <CrmIcon name="quotation" className="h-3 w-3" />
-                    Open quotation
+                    {t.openQuotation}
                   </Link>
                   <Link
                     href={`/crm/quotations/${latestQuotation.id}/print`}
                     className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dbe2e5] bg-white px-2.5 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
                     <CrmIcon name="external" className="h-3 w-3" />
-                    Print view
+                    {t.printView}
                   </Link>
                 </div>
               </div>
             ) : (
               <p className="mt-3 text-[10px] leading-4 text-[#8b969e]">
-                {canCreateQuotation
-                  ? 'No quotation yet. Create one to price this deal.'
-                  : 'No quotation on record for this deal.'}
+                {canCreateQuotation ? t.noQuotationCreate : t.noQuotationRecord}
               </p>
             )}
           </section>
 
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
-            <h2 className="text-xs font-semibold text-[#2b3841]">Stage history</h2>
-            <p className="mt-0.5 text-[9px] text-[#8b969e]">
-              Every stage this deal has moved through
-            </p>
+            <h2 className="text-xs font-semibold text-[#2b3841]">{t.stageHistory}</h2>
+            <p className="mt-0.5 text-[9px] text-[#8b969e]">{t.stageHistoryHint}</p>
             {stageHistory.length === 0 ? (
-              <p className="mt-3 text-[10px] text-[#8b969e]">No stage changes recorded yet.</p>
+              <p className="mt-3 text-[10px] text-[#8b969e]">{t.noStageChanges}</p>
             ) : (
               <ol className="mt-4 space-y-3">
                 {stageHistory.map((entry) => (
@@ -1159,16 +1136,12 @@ export function OpportunityDetail({
                       className="absolute start-0 top-1.5 h-1.5 w-1.5 rounded-full bg-[#18b6a4]"
                     />
                     <p className="text-[10px] font-semibold text-[#33414a]">
-                      {entry.fromStage ? `${STAGE_LABELS[entry.fromStage]} → ` : ''}
-                      {STAGE_LABELS[entry.toStage]}
+                      {entry.fromStage
+                        ? t.stageFlow(m.opportunityStage[entry.fromStage], m.opportunityStage[entry.toStage])
+                        : m.opportunityStage[entry.toStage]}
                     </p>
                     <p className="mt-0.5 text-[9px] text-[#8b969e]">
-                      {entry.changedByName ?? 'System'} ·{' '}
-                      {entry.changedAt.toLocaleDateString()}{' '}
-                      {entry.changedAt.toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {entry.changedByName ?? t.system} · {format.date(entry.changedAt)} {format.time(entry.changedAt)}
                     </p>
                     {entry.note && (
                       <p className="mt-1 text-[9px] leading-4 text-[#6b7681]">{entry.note}</p>
@@ -1187,18 +1160,17 @@ export function OpportunityDetail({
             onSubmit={handleCompleteSubmit}
             role="dialog"
             aria-modal="true"
-            aria-label="Complete follow-up"
+            aria-label={m.followUp.completeTitle}
             className="w-full max-w-md rounded-xl bg-white p-5 shadow-[0_20px_60px_rgba(15,30,40,0.25)]"
           >
-            <h2 className="text-sm font-semibold text-[#202d35]">Complete follow-up</h2>
+            <h2 className="text-sm font-semibold text-[#202d35]">{m.followUp.completeTitle}</h2>
             <p className="mt-1 text-[10px] text-[#7b8790]">
-              {ACTION_TYPE_LABELS[completing.actionType]} · due{' '}
-              {completing.dueAt.toLocaleDateString()}
+              {t.completeSubtitle(m.followUpTypes[completing.actionType], format.date(completing.dueAt))}
             </p>
 
             <label className="mt-4 block">
               <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                Outcome (required)
+                {m.followUp.outcomeRequiredLabel}
               </span>
               <textarea
                 value={completionNote}
@@ -1206,7 +1178,7 @@ export function OpportunityDetail({
                 rows={3}
                 required
                 autoFocus
-                placeholder="What actually happened on this action?"
+                placeholder={m.followUp.outcomePlaceholder}
                 className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
               />
             </label>
@@ -1218,7 +1190,7 @@ export function OpportunityDetail({
                 onChange={(event) => setScheduleNext(event.target.checked)}
                 className="h-3.5 w-3.5 accent-[#18b6a4]"
               />
-              Schedule the next action now
+              {t.scheduleNextNow}
             </label>
 
             {scheduleNext ? (
@@ -1226,7 +1198,7 @@ export function OpportunityDetail({
                 <div className="flex gap-2.5">
                   <label className="flex-1">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                      Type
+                      {t.type}
                     </span>
                     <select
                       value={nextActionType}
@@ -1235,14 +1207,14 @@ export function OpportunityDetail({
                     >
                       {FOLLOW_UP_ACTION_TYPES.map((type) => (
                         <option key={type} value={type}>
-                          {ACTION_TYPE_LABELS[type]}
+                          {m.followUpTypes[type]}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label className="flex-1">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                      Due
+                      {t.due}
                     </span>
                     <input
                       type="datetime-local"
@@ -1254,7 +1226,7 @@ export function OpportunityDetail({
                 </div>
                 <label className="block">
                   <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                    Note (optional)
+                    {t.noteOptional}
                   </span>
                   <input
                     type="text"
@@ -1272,14 +1244,14 @@ export function OpportunityDetail({
                 onClick={() => setCompleting(null)}
                 className="h-8 rounded-lg border border-[#dfe4e7] px-3 text-[10px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
               >
-                Cancel
+                {m.common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busy || completionNote.trim().length === 0}
                 className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
               >
-                {busy ? 'Saving…' : 'Complete'}
+                {busy ? m.followUp.saving : m.followUp.complete}
               </button>
             </div>
           </form>

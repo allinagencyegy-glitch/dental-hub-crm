@@ -64,6 +64,21 @@ describe('message catalogues', () => {
     check(messagesFor('en'));
   });
 
+  it('counts things with the Arabic plural forms', () => {
+    const quotations = messagesFor('ar').opportunities.detail.quotationsOnRecord;
+    expect([1, 2, 3, 10, 11, 100].map(quotations)).toEqual([
+      'عرض سعر واحد في السجل',
+      'عرضا سعر في السجل',
+      '3 عروض أسعار في السجل',
+      '10 عروض أسعار في السجل',
+      '11 عرض سعر في السجل',
+      '100 عرض سعر في السجل',
+    ]);
+    expect(messagesFor('en').opportunities.detail.quotationsOnRecord(1)).toBe('1 quotation on record');
+    expect(messagesFor('ar').opportunities.detail.closedKept(0)).toMatch(/^لا توجد خطوات منتهية في السجل\./);
+    expect(messagesFor('ar').pipeline.summary(2, '535,000 ج.م.')).not.toContain('..');
+  });
+
   it('counts minutes with the Arabic plural forms', () => {
     const { tooManyAttempts } = messagesFor('ar').login;
     expect(tooManyAttempts(1)).toContain('بعد دقيقة.');
@@ -84,18 +99,21 @@ describe('catalog labels', () => {
     return kind ? rows.filter((row) => row[0] === kind).map((row) => row[1]) : rows.map((row) => row[0]);
   }
 
-  it('translates every seeded source, product category and disqualification reason', () => {
+  it('translates every seeded source, product category, disqualification and lost reason', () => {
     const sources = seededCodes('crm_source');
     const categories = seededCodes('crm_product_category');
     const reasons = seededCodes('crm_outcome_reason', 'disqualify');
+    const lostReasons = seededCodes('crm_outcome_reason', 'lost');
     expect(sources).toContain('whatsapp');
     expect(categories).toContain('dental_units');
     expect(reasons).toContain('wrong_number');
+    expect(lostReasons).toContain('price_too_high');
 
     for (const m of [messagesFor('ar'), messagesFor('en')]) {
       expect(Object.keys(m.catalog.sources).sort()).toEqual([...sources].sort());
       expect(Object.keys(m.catalog.productCategories).sort()).toEqual([...categories].sort());
       expect(Object.keys(m.catalog.disqualifyReasons).sort()).toEqual([...reasons].sort());
+      expect(Object.keys(m.catalog.lostReasons).sort()).toEqual([...lostReasons].sort());
     }
   });
 
@@ -124,5 +142,13 @@ describe('formatting', () => {
     const en = formatters('en');
     expect(en.date(instant)).toBe('Oct 25, 2026');
     expect(en.time(instant)).toMatch(/^04:30\sPM$/);
+  });
+
+  it('writes amounts in whole Egyptian pounds, with Latin digits in Arabic', () => {
+    expect(formatters('en').currency(1250000.4)).toMatch(/^EGP\s1,250,000$/);
+    const arabic = formatters('ar').currency(1250000.4);
+    expect(arabic).toContain('1,250,000');
+    expect(arabic).toContain('ج.م.');
+    expect(arabic).not.toMatch(/[٠-٩]/);
   });
 });

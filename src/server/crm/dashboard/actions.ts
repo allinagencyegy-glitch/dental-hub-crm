@@ -70,7 +70,7 @@ export async function getPipelineBoardAction(input: unknown = {}): Promise<Pipel
 }
 
 /** The reference list behind the dashboard's source filter. */
-export async function getSourceOptionsAction(): Promise<{ id: string; name: string }[]> {
+export async function getSourceOptionsAction(): Promise<{ id: string; code: string; name: string }[]> {
   await assertPermission('dashboard:read');
   return getSourceOptionsUseCase();
 }
