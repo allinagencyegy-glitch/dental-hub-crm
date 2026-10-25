@@ -6,6 +6,7 @@
  */
 import { Pool, type PoolClient } from 'pg';
 import type { Db } from '@/server/db/types';
+import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
 import type { Role } from '@/server/authz/permissions';
 import { hashPassword } from '@/server/auth/password';
 import { toPublicUser, type PublicUser, type UserRow } from './dto';
@@ -175,6 +176,45 @@ export async function setUserActive(db: Db, id: string, isActive: boolean): Prom
     }
     return toPublicUser(rows[0]);
   });
+}
+
+/**
+ * Replaces the user's password and revokes every other live session they hold,
+ * in one transaction: a password change is how a user locks out someone who
+ * learned the old one, so a session that person already holds must not survive
+ * it. The session making the change (`keepSessionId`) stays signed in.
+ */
+export async function changeUserPassword(
+  db: Db,
+  userId: string,
+  newPassword: string,
+  keepSessionId: string,
+): Promise<{ revokedSessions: number }> {
+  // Hashed before the transaction opens so no row is locked during argon2.
+  const passwordHash = await hashPassword(newPassword);
+  const { client, release } = await beginTransaction(db);
+
+  try {
+    const { rowCount } = await client.query(
+      'UPDATE crm_user SET password_hash = $2, updated_at = now() WHERE id = $1',
+      [userId, passwordHash],
+    );
+    if (rowCount !== 1) throw new Error('User not found.');
+
+    const revoked = await client.query(
+      `UPDATE crm_session SET revoked_at = now()
+        WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL`,
+      [userId, keepSessionId],
+    );
+
+    await commitTransaction(client);
+    return { revokedSessions: revoked.rowCount ?? 0 };
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    release();
+  }
 }
 
 export async function countActiveAdmins(db: Db): Promise<number> {

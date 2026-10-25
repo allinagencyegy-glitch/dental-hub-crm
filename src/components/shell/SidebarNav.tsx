@@ -18,6 +18,7 @@ const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'op
   Team: 'team',
   Settings: 'settings',
   Users: 'settings',
+  Password: 'settings',
 };
 
 function NavLink({

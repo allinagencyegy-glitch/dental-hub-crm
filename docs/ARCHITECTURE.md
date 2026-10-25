@@ -78,6 +78,7 @@ src/
       page.tsx               Foundation home
       forbidden/page.tsx     Explicit 403
       settings/users/        ADMIN user administration
+      settings/password/     Every user changes their own password
     api/health/route.ts      Liveness + readiness
 
   components/shell/          AppShell, SidebarNav, SignOutButton, navigation
@@ -94,6 +95,7 @@ src/
       cookie.ts              'server-only' — cookie read/write
       dal.ts                 'server-only' — THE authorization boundary
       actions.ts             'use server' — login / logout
+      password-actions.ts    'use server' — change own password
       form-state.ts          Types shared with Client Components
     authz/
       permissions.ts         Roles, permissions, can()
@@ -199,6 +201,27 @@ that check itself, authoritatively.
 `logoutAction` sets `revoked_at` on the session row, clears the cookie, and
 redirects. Because revocation is a database fact, a cookie captured before logout
 is dead the moment it is replayed.
+
+### Change password
+
+```
+POST /crm/settings/password  (Server Action)
+  │
+  ├─ assertPermission('crm:access')        ← any signed-in user, own account only
+  ├─ zod: new ≥ 12 chars, confirmation matches, differs from current
+  ├─ argon2id verify of the CURRENT password
+  │     └─ wrong → "Your current password is incorrect.", nothing written
+  ├─ hash the new password (before the transaction, so no row waits on argon2)
+  └─ one transaction:
+        UPDATE crm_user SET password_hash = …
+        UPDATE crm_session SET revoked_at = now()
+         WHERE user_id = $1 AND id <> <this session> AND revoked_at IS NULL
+```
+
+The current password is required so a session left open on a shared machine
+cannot be used to take the account over. Every other session is revoked because
+changing the password is how a user locks out someone who learned the old one;
+the session making the change stays signed in.
 
 ---
 
