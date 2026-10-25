@@ -13,6 +13,7 @@
 #     /var/lib/dentalhub/shared/.env
 #   - builds the first release with deploy/update.sh and runs it under systemd
 #     on 127.0.0.1:3000, restarting it if it ever stops
+#   - backs up the database every night at about 03:00, keeping 14 days
 #   - puts Caddy in front for HTTPS (certificates are issued and renewed automatically)
 #   - closes the firewall to everything except SSH, HTTP and HTTPS
 #
@@ -27,8 +28,6 @@ set -Eeuo pipefail
 
 readonly NODE_MAJOR=22
 readonly PG_MAJOR=17
-readonly DB_NAME=dental_hub_crm
-readonly DB_USER=dental_hub_crm
 readonly TIMEZONE=Africa/Cairo
 readonly KEYRINGS=/etc/apt/keyrings
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -144,8 +143,6 @@ for _ in $(seq 1 30); do
 done
 pg_isready -q -h 127.0.0.1 -p 5432 || die 'PostgreSQL did not start on 127.0.0.1:5432.'
 
-psql_admin() { runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 "$@"; }
-
 if [[ -f "$ENV_FILE" ]]; then
   echo "Keeping the existing database settings in $ENV_FILE."
 else
@@ -170,10 +167,21 @@ if [[ "$(psql_admin -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")
   psql_admin -c "CREATE DATABASE $DB_NAME OWNER $DB_USER"
 fi
 
+# Replaces a systemd unit with stdin only when it differs; returns 1 when unchanged.
+write_unit() {
+  local file="/etc/systemd/system/$1"
+  cat >"$file.new"
+  if cmp -s "$file.new" "$file"; then
+    rm -f "$file.new"
+    return 1
+  fi
+  mv "$file.new" "$file"
+}
+
 # ---------------------------------------------------------------------------
 log 'Service'
-unit_file="/etc/systemd/system/$SERVICE.service"
-cat >"$unit_file.new" <<EOF
+unit_changed=0
+write_unit "$SERVICE.service" <<EOF && unit_changed=1
 [Unit]
 Description=Dental Hub CRM
 After=network.target postgresql.service
@@ -198,13 +206,6 @@ ProtectHome=true
 [Install]
 WantedBy=multi-user.target
 EOF
-unit_changed=0
-if ! cmp -s "$unit_file.new" "$unit_file"; then
-  mv "$unit_file.new" "$unit_file"
-  unit_changed=1
-else
-  rm -f "$unit_file.new"
-fi
 systemctl daemon-reload
 systemctl enable "$SERVICE" >/dev/null
 
@@ -215,6 +216,34 @@ if ((unit_changed)) || ! systemctl is-active --quiet "$SERVICE"; then
 fi
 wait_healthy 60 || die "the app did not become healthy. See: journalctl -u $SERVICE -n 50"
 echo "The app is running and can reach its database."
+
+# ---------------------------------------------------------------------------
+log 'Nightly database backup'
+write_unit "$SERVICE-backup.service" <<EOF || true
+[Unit]
+Description=Dental Hub CRM database backup
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $APP_DIR/deploy/backup.sh
+EOF
+write_unit "$SERVICE-backup.timer" <<EOF || true
+[Unit]
+Description=Back up the Dental Hub CRM database every night
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now "$SERVICE-backup.timer" >/dev/null
+echo "Backups go to $BACKUP_DIR. Next one: $(systemctl show -P NextElapseUSecRealtime "$SERVICE-backup.timer")"
 
 # ---------------------------------------------------------------------------
 log "HTTPS for $DOMAIN"
@@ -282,4 +311,6 @@ printf '  %-48s %s\n' \
   "sudo bash $APP_DIR/deploy/update.sh" 'deploy the latest code' \
   "systemctl status $SERVICE" 'is the app running?' \
   "journalctl -u $SERVICE -f" "follow the app's log" \
+  "sudo bash $APP_DIR/deploy/backup.sh" 'back up the database now' \
+  "sudo bash $APP_DIR/deploy/restore.sh" 'list backups, and restore one' \
   'journalctl -u caddy -n 50' 'HTTPS and certificate log'

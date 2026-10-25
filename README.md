@@ -158,6 +158,33 @@ restart.
   still reads).
 - `--ref <tag or commit>` deploys a specific version; `--help` lists the rest.
 - Only one update runs at a time, and the last three releases are kept.
+- The database is backed up just before the migrations run.
+
+### Backups
+
+`setup.sh` installs a timer that backs up the database every night at about
+03:00 Cairo time into `/var/backups/dentalhub/`, readable only by root. Each
+backup is read back in full before it counts, and backups older than 14 days
+are deleted. `update.sh` and `restore.sh` take one of their own first.
+
+```bash
+sudo bash /opt/dental-hub-crm/deploy/backup.sh                 # back up now
+sudo bash /opt/dental-hub-crm/deploy/restore.sh                # list the backups
+sudo bash /opt/dental-hub-crm/deploy/restore.sh <file name>    # restore one
+systemctl list-timers dental-hub-crm-backup.timer              # when the next one runs
+journalctl -u dental-hub-crm-backup -n 20                      # how the last ones went
+```
+
+A restore loads the backup into a separate database while the CRM keeps
+running, then stops the CRM for the swap, applies any migrations the running
+version needs, and starts it again. If any step fails, the old database is put
+back. Everything entered after the backup was taken is replaced, but the
+backup taken just before the restore keeps it, so a restore can be undone the
+same way.
+
+Backups on the server do not survive losing the server. Turn on the hosting
+provider's server backups as well, or copy the folder elsewhere regularly, for
+example `scp 'root@<server>:/var/backups/dentalhub/*.dump' .`
 
 ## Known environment constraint
 
