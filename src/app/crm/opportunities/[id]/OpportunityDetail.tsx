@@ -436,7 +436,7 @@ export function OpportunityDetail({
           </p>
           <p className="mt-1 text-[10px] text-[#6c7a83]">
             {completed.length} action{completed.length === 1 ? '' : 's'} completed and kept on
-            record. A closed deal is terminal — start a new lead for a fresh commercial attempt.
+            record. A closed deal cannot be reopened — capture a new lead to try again.
           </p>
         </div>
       ) : null}
@@ -579,8 +579,8 @@ export function OpportunityDetail({
             <h2 className="text-sm font-semibold text-[#202d35]">Stage</h2>
             <p className="mt-0.5 text-[10px] text-[#8c969d]">
               {isClosed
-                ? 'A closed deal is terminal. Its history stays on the record.'
-                : 'Only legal moves are offered. Marking as won or lost closes the deal.'}
+                ? 'This deal is closed and cannot change stage. Its history stays on record.'
+                : 'Only the stages this deal can move to are shown. Marking it won or lost closes it.'}
             </p>
 
             {isClosed ? (
@@ -1146,7 +1146,7 @@ export function OpportunityDetail({
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
             <h2 className="text-xs font-semibold text-[#2b3841]">Stage history</h2>
             <p className="mt-0.5 text-[9px] text-[#8b969e]">
-              Append-only record of how this deal progressed
+              Every stage this deal has moved through
             </p>
             {stageHistory.length === 0 ? (
               <p className="mt-3 text-[10px] text-[#8b969e]">No stage changes recorded yet.</p>

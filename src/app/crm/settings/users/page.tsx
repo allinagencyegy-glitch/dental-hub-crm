@@ -17,8 +17,7 @@ export default async function UsersSettingsPage() {
     <div className="mx-auto max-w-4xl">
       <h1 className="text-2xl font-semibold tracking-tight text-white">Users</h1>
       <p className="mt-2 text-sm text-slate-400">
-        Internal Dental Hub staff accounts. Foundation v0 supports listing, creating, role changes
-        and activation.
+        Dental Hub staff accounts. Add people, change their role, and deactivate anyone who leaves.
       </p>
 
       {mayManage ? (

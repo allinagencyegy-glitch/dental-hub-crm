@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { updateLeadAction } from '@/server/crm/leads/actions';
+import { ROLE_LABELS, isRole } from '@/server/authz/permissions';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { SourceOption, ProductCategoryOption, CampaignOption, AssignableOwner } from './LeadEditForm.types';
 
@@ -136,7 +137,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
       <PageHeader
         eyebrow="Lead management"
         title="Edit lead"
-        description="Update lead details, contact information, and attribution. Changes are saved atomically."
+        description="Update the lead, the contact’s details and where the inquiry came from."
       />
 
       {error && (
@@ -204,7 +205,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
               {fieldErrors['contact.email'] && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors['contact.email']}</p>}
             </div>
           </div>
-          <p className="text-[10px] text-[#8a959d]">Phone and email are used to resolve the canonical contact identity. At least one is required.</p>
+          <p className="text-[10px] text-[#8a959d]">Phone and email identify this contact across the CRM. At least one is required.</p>
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
@@ -291,7 +292,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
                 <option value="">Select owner</option>
                 {assignableOwners.map((owner) => (
                   <option key={owner.id} value={owner.id}>
-                    {owner.displayName} ({owner.role})
+                    {owner.displayName} ({isRole(owner.role) ? ROLE_LABELS[owner.role] : owner.role})
                   </option>
                 ))}
               </select>

@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Avatar, PageHeader, Toolbar } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import {
-  OPPORTUNITY_STAGES,
   STAGE_LABELS,
   type OpportunityStage,
 } from '@/server/crm/opportunities/stage';
@@ -393,8 +392,7 @@ export function OpportunitiesList({
       </div>
 
       <p className="mt-3 text-[10px] text-[#98a2a9]">
-        Closed deals keep their full follow-up history. {OPPORTUNITY_STAGES.length} stages are
-        configured; WON and LOST are terminal.
+        Closed deals keep their full follow-up history. Won and lost deals cannot be reopened.
       </p>
     </>
   );

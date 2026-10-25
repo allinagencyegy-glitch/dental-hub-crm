@@ -905,7 +905,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white border border-[#dfe5e8] p-5 shadow-xl">
             <h2 className="text-lg font-semibold text-[#1c2831]">Disqualify lead</h2>
-            <p className="mt-1 text-sm text-[#53616a]">This action cannot be undone. The lead will be marked as DISQUALIFIED.</p>
+            <p className="mt-1 text-sm text-[#53616a]">This action cannot be undone. The lead will be marked as disqualified.</p>
 
             <div className="mt-4 space-y-4">
               <div>

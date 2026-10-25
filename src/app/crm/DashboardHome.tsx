@@ -387,10 +387,9 @@ export function DashboardHome({
               );
             })}
             <p className="pt-2 text-[9px] leading-4 text-[#98a2a9]">
-              Every step is a subset of the one above it, so a share can only fall: Won means a
-              Won-stage opportunity, Qualified means an opportunity exists, and step one is the same
-              number as the New leads KPI. Contacted is not a milestone — lead status is a label a
-              rep can rewrite, not a commercial outcome.
+              Each step counts the leads from the step above that got this far, so the percentage
+              can only go down. Qualified means the lead became an opportunity; Won means that deal
+              was won. The first step matches the New leads figure above.
             </p>
           </div>
         </section>
@@ -521,8 +520,8 @@ export function DashboardHome({
             <OutcomeTile label="Rejected" value={payload.quotationOutcomes.rejected} tone="bg-[#ffe9ea] text-[#c43f47]" />
           </div>
           <p className="px-5 pb-4 text-[9px] leading-4 text-[#98a2a9]">
-            Counted by sent / accepted / rejected timestamps. Statuses shown live on the pipeline
-            board.
+            Counted by the date each quotation was sent, accepted or rejected. See the pipeline
+            board for where each deal stands now.
           </p>
         </section>
 
@@ -561,7 +560,7 @@ export function DashboardHome({
       <section className="mt-5 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">
         <div className="border-b border-[#e7ebed] px-5 py-4">
           <h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">Lead status</h2>
-          <p className="mt-0.5 text-[10px] text-[#8a959d]">Right now · non-archived leads</p>
+          <p className="mt-0.5 text-[10px] text-[#8a959d]">Right now · leads not archived</p>
         </div>
         <div className="grid grid-cols-3 gap-2 px-5 py-4">
           {overview.leadsByStatus.map((entry) => (
@@ -582,9 +581,10 @@ export function DashboardHome({
       </section>
 
       <p className="mt-4 text-[9px] text-[#98a2a9]">
-        Snapshot metrics never change with the selected period. Period fields: new leads →
-        lead.created_at · won/lost → won_at / lost_at · quotation outcomes → status timestamps ·
-        completed follow-ups → completed_at. Rep totals are scoped to what you are allowed to see.
+        Figures marked “Right now” ignore the selected period. The others count what happened in
+        it: leads by the day they arrived, deals by the day they were won or lost, quotations by
+        the day they were sent, accepted or rejected, and follow-ups by the day they were
+        completed. Team totals include only the people whose work you can see.
       </p>
     </>
   );
