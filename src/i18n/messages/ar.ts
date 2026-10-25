@@ -872,4 +872,28 @@ export const ar: Messages = {
     footnote:
       'الأرقام المعلّمة بـ «الآن» لا تتأثر بالفترة المختارة. أما الباقي فيعدّ ما حدث خلالها: العملاء المحتملون بيوم وصولهم، والصفقات بيوم كسبها أو خسارتها، وعروض الأسعار بيوم إرسالها أو قبولها أو رفضها، والمتابعات بيوم إنهائها. إجماليات الفريق تشمل فقط من يمكنك رؤية عملهم.',
   },
+  notifications: {
+    title: 'الإشعارات',
+    open: 'الإشعارات',
+    openWithCount: (count) => `الإشعارات، الجديد: ${count}`,
+    markAllRead: 'تعليم الكل كمقروء',
+    empty: 'لا يوجد جديد. أي عمل يُسند إليك سيظهر هنا.',
+    loadFailed: 'تعذّر تحميل الإشعارات.',
+    overdue: (count) => `متابعات متأخرة: ${count}`,
+    dueToday: (count) => `مستحقة اليوم: ${count}`,
+    openFollowUps: 'فتح المتابعات',
+    someone: 'أحد الزملاء',
+    aCustomer: 'عميل',
+    kinds: {
+      LEAD_RECEIVED: (actor, customer) => `عميل محتمل جديد: ${customer}، سجّله ${actor}`,
+      LEAD_ASSIGNED: (actor, customer) => `أسند إليك ${actor} العميل المحتمل ${customer}`,
+      OPPORTUNITY_ASSIGNED: (actor, customer) => `أسند إليك ${actor} الفرصة ${customer}`,
+      FOLLOW_UP_ASSIGNED: (actor, action, customer, due) =>
+        `أسند إليك ${actor} متابعة: ${action} مع ${customer}، موعدها ${due}`,
+      QUOTATION_ACCEPTED: (actor, quoteNumber, customer) =>
+        `قُبل عرض السعر ${quoteNumber} لـ ${customer}، وسجّله ${actor}`,
+      QUOTATION_REJECTED: (actor, quoteNumber, customer) =>
+        `رُفض عرض السعر ${quoteNumber} لـ ${customer}، وسجّله ${actor}`,
+    },
+  },
 };

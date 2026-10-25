@@ -147,6 +147,8 @@ describe('interface language', () => {
       }
       expect(body).toContain('<span lang="en">English</span>');
       expect(body).toContain('<title>المستخدمون | Dental Hub CRM</title>');
+      // The bell in the header.
+      expect(body).toContain('aria-label="الإشعارات"');
     });
 
     it('answers a Server Action in Arabic', async () => {

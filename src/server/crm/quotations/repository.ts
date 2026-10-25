@@ -23,6 +23,7 @@ import {
   rollbackTransaction,
 } from '@/server/db/transaction';
 import { findOpportunityById, recordOpportunityActivity } from '@/server/crm/opportunities/repository';
+import { notify } from '@/server/crm/notifications/repository';
 import {
   canTransition,
   isRevisionAllowed,
@@ -844,6 +845,20 @@ export async function transitionQuotation(
       },
       actorUserId: actor.userId,
     });
+
+    // The customer's answer goes to whoever owns the deal.
+    if (to === 'ACCEPTED' || to === 'REJECTED') {
+      const { rows: owners } = await client.query<{ owner_user_id: string }>(
+        `SELECT owner_user_id FROM crm_opportunity WHERE id = $1`,
+        [updated.opportunityId],
+      );
+      await notify(client, {
+        recipientUserId: owners[0].owner_user_id,
+        kind: to === 'ACCEPTED' ? 'QUOTATION_ACCEPTED' : 'QUOTATION_REJECTED',
+        actorUserId: actor.userId,
+        quotationId: updated.id,
+      });
+    }
 
     await commitTransaction(client);
     const detail = await findQuotationDetailById(db, quotationId, actor);
