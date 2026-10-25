@@ -56,6 +56,8 @@ export type CaptureLeadResult =
       conflict?: { phoneContactId: string; emailContactId: string };
       // DUPLICATE_LEAD only, and only when the actor may open that lead.
       existingLeadId?: string;
+      // DUPLICATE_LEAD only: who is already working the contact.
+      existingOwnerName?: string;
     };
 
 export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
@@ -158,6 +160,7 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
         ok: false,
         error: 'DUPLICATE_LEAD',
         message: error.message,
+        existingOwnerName: error.ownerName,
         ...(mayOpen ? { existingLeadId: error.existingLeadId } : {}),
       };
     }

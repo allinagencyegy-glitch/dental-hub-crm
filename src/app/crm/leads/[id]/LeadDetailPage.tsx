@@ -7,14 +7,12 @@ import { Avatar, BackLink, Badge, InfoLine } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { markLeadContactedAction, disqualifyLeadAction, archiveLeadAction, restoreLeadAction, linkLeadToAccountAction } from '@/server/crm/leads/actions';
 import { qualifyLeadAction, createLeadFollowUpAction, completeFollowUpAction } from '@/server/crm/opportunities/actions';
-import {
-  ACTION_TYPE_LABELS,
-  FOLLOW_UP_ACTION_TYPES,
-  type FollowUpActionType,
-} from '@/server/crm/opportunities/followup-actions';
+import { FOLLOW_UP_ACTION_TYPES, type FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
 import type { FollowUp } from '@/server/crm/opportunities/followups';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
+import { useFormatters, useMessages } from '@/i18n/I18nProvider';
+import { catalogLabel } from '@/i18n/format';
 
 interface DisqualifyReason {
   id: string;
@@ -44,6 +42,14 @@ interface LeadDetailPageProps {
 
 export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, userId, opportunityId, qualifiedAt, followUps, now }: LeadDetailPageProps) {
   const router = useRouter();
+  const m = useMessages();
+  const format = useFormatters();
+  const t = m.leads.detail;
+  const actionLabel = (type: FollowUpActionType) => m.followUpTypes[type];
+  const sourceLabel = catalogLabel(m.catalog.sources, lead.sourceCode, lead.sourceName);
+  const productLabel = lead.productCategoryName
+    ? catalogLabel(m.catalog.productCategories, lead.productCategoryCode, lead.productCategoryName)
+    : null;
 
   const [disqualifyOpen, setDisqualifyOpen] = useState(false);
   const [disqualifyReasonId, setDisqualifyReasonId] = useState('');
@@ -106,12 +112,12 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const handleScheduleFollowUp = async (event: FormEvent) => {
     event.preventDefault();
     if (!followUpDueAt) {
-      setFollowUpError('Choose when this action is due.');
+      setFollowUpError(t.chooseDue);
       return;
     }
     const dueAt = new Date(followUpDueAt);
     if (Number.isNaN(dueAt.getTime())) {
-      setFollowUpError('That due date could not be read.');
+      setFollowUpError(t.dueUnreadable);
       return;
     }
     setFollowUpSubmitting(true);
@@ -131,7 +137,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
       setFollowUpType('CALL');
       router.refresh();
     } catch {
-      setFollowUpError('That action could not be scheduled.');
+      setFollowUpError(t.scheduleFailed);
     } finally {
       setFollowUpSubmitting(false);
     }
@@ -147,7 +153,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
     event.preventDefault();
     if (!completing) return;
     if (!completionNote.trim()) {
-      setCompleteError('Add a short outcome before completing.');
+      setCompleteError(t.outcomeRequired);
       return;
     }
     setCompletingSubmitting(true);
@@ -163,7 +169,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
       setCompleting(null);
       router.refresh();
     } catch {
-      setCompleteError('That action could not be completed.');
+      setCompleteError(t.completeFailed);
     } finally {
       setCompletingSubmitting(false);
     }
@@ -185,11 +191,11 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
   const handleDisqualify = async () => {
     if (!disqualifyReasonId) {
-      setDisqualifyError('Please select a reason');
+      setDisqualifyError(t.reasonRequired);
       return;
     }
     if (requiresNote && !disqualifyNote.trim()) {
-      setDisqualifyError('This reason requires a note');
+      setDisqualifyError(t.reasonNoteRequired);
       return;
     }
 
@@ -206,7 +212,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         setDisqualifyError(result.message);
       }
     } catch {
-      setDisqualifyError('An unexpected error occurred');
+      setDisqualifyError(m.common.unexpectedError);
     } finally {
       setDisqualifySubmitting(false);
     }
@@ -237,7 +243,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         setRestoreError(result.message);
       }
     } catch {
-      setRestoreError('That lead could not be restored.');
+      setRestoreError(t.restoreFailed);
     } finally {
       setRestoreSubmitting(false);
     }
@@ -249,7 +255,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
     if (trimmed !== '') {
       const parsed = Number(trimmed);
       if (Number.isNaN(parsed) || parsed < 0) {
-        setQualifyError('Estimated value must be zero or more');
+        setQualifyError(t.valueInvalid);
         return;
       }
       estimatedValue = parsed;
@@ -271,7 +277,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         setQualifyError(result.message);
       }
     } catch {
-      setQualifyError('An unexpected error occurred');
+      setQualifyError(m.common.unexpectedError);
     } finally {
       setQualifySubmitting(false);
     }
@@ -280,11 +286,11 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const handleLinkAccount = async () => {
     const mode = accountMode;
     if (mode === 'link' && !accountSelectId) {
-      setAccountError('Choose a clinic to link.');
+      setAccountError(t.chooseClinic);
       return;
     }
     if (mode === 'create' && accountNewName.trim() === '') {
-      setAccountError('Enter a clinic name.');
+      setAccountError(t.enterClinicName);
       return;
     }
 
@@ -304,7 +310,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         setAccountError(result.message);
       }
     } catch {
-      setAccountError('An unexpected error occurred');
+      setAccountError(m.common.unexpectedError);
     } finally {
       setAccountSubmitting(false);
     }
@@ -312,34 +318,34 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
   return (
     <>
-      <BackLink href="/crm/leads" label="Back to lead inbox" />
+      <BackLink href="/crm/leads" label={t.back} />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-4">
           <Avatar name={lead.contactName} size="lg" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-[25px] font-semibold tracking-[-0.035em] text-[#1c2831]">{lead.contactName}</h1>
-              <Badge value={lead.status as BadgeValue} dot />
+              <Badge value={lead.status as BadgeValue} label={m.leadStatus[lead.status]} dot />
               {isArchived && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3e0] px-2 py-0.5 text-[10px] font-semibold text-[#c47c00]">
                   <CrmIcon name="archive" className="h-3 w-3" />
-                  Archived
+                  {m.leads.list.archived}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-[11px] text-[#8a959d]">Lead reference {lead.id.slice(0, 8)}</p>
+            <p className="mt-1 text-[11px] text-[#8a959d]">{t.reference(lead.id.slice(0, 8))}</p>
           </div>
         </div>
         {canMutate && (
           <div>
-            <p className="mb-1.5 text-end text-[9px] font-medium text-[#8a959d]">Lead actions</p>
+            <p className="mb-1.5 text-end text-[9px] font-medium text-[#8a959d]">{t.actions}</p>
             <div className="flex flex-wrap justify-end gap-2">
               <Link
                 href={`/crm/leads/${lead.id}/edit`}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
               >
                 <CrmIcon name="edit" className="h-3.5 w-3.5" />
-                Edit
+                {t.edit}
               </Link>
               {!isArchived && (
                 <>
@@ -351,7 +357,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                       className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#18b6a4] px-3 text-[11px] font-semibold text-white transition hover:bg-[#128d81] disabled:opacity-50"
                     >
                       <CrmIcon name="check" className="h-3.5 w-3.5" />
-                      Mark contacted
+                      {t.markContacted}
                     </button>
                   )}
                   <button
@@ -361,7 +367,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
                   >
                     <CrmIcon name="x" className="h-3.5 w-3.5" />
-                    Disqualify
+                    {t.disqualify}
                   </button>
                   {(lead.status === 'NEW' || lead.status === 'CONTACTED') && (
                     opportunityId ? (
@@ -370,7 +376,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                         className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#18b6a4] px-3 text-[11px] font-semibold text-white transition hover:bg-[#128d81]"
                       >
                         <CrmIcon name="opportunities" className="h-3.5 w-3.5" />
-                        View opportunity
+                        {t.viewOpportunity}
                       </Link>
                     ) : !isArchived ? (
                       <button
@@ -380,7 +386,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                         className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#18b6a4] px-3 text-[11px] font-semibold text-white transition hover:bg-[#128d81] disabled:opacity-50"
                       >
                         <CrmIcon name="opportunities" className="h-3.5 w-3.5" />
-                        Qualify
+                        {t.qualify}
                       </button>
                     ) : null
                   )}
@@ -391,7 +397,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#f4c7ca] bg-[#fff8f0] px-3 text-[11px] font-semibold text-[#c47c00] transition hover:bg-[#ffe9d9] disabled:opacity-50"
                   >
                     <CrmIcon name="archive" className="h-3.5 w-3.5" />
-                    Archive
+                    {t.archive}
                   </button>
                 </>
               )}
@@ -403,7 +409,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#18b6a4] px-3 text-[11px] font-semibold text-white transition hover:bg-[#128d81] disabled:opacity-50"
                 >
                   <CrmIcon name="unarchive" className="h-3.5 w-3.5" />
-                  Restore
+                  {t.restore}
                 </button>
               )}
             </div>
@@ -418,10 +424,9 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
       {qualifyOpen && canQualify && (
         <div className="mt-4 rounded-xl border border-[#dfe5e8] bg-white p-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Qualify this lead</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{t.qualifyTitle}</h2>
           <p className="mt-0.5 text-[10px] text-[#8a959d]">
-            Creates a commercial opportunity owned by {lead.ownerName}, starting at stage
-            Qualified. A lead can only be qualified once.
+            {t.qualifyDescription(lead.ownerName)}
           </p>
           {qualifyError && (
             <p role="alert" className="mt-3 rounded-lg bg-[#fff0f1] px-3 py-2 text-[11px] font-semibold text-[#b83c43] ring-1 ring-[#f0c5c8]">
@@ -431,7 +436,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
-                Estimated value (EGP)
+                {t.estimatedValue}
               </span>
               <input
                 type="number"
@@ -439,19 +444,19 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 step="0.01"
                 value={qualifyValue}
                 onChange={(e) => setQualifyValue(e.target.value)}
-                placeholder="Optional"
+                placeholder={t.optional}
                 className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#3c4a54] outline-none placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
               />
             </label>
             <label className="block">
               <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
-                Sales context
+                {t.salesContext}
               </span>
               <input
                 type="text"
                 value={qualifyNote}
                 onChange={(e) => setQualifyNote(e.target.value)}
-                placeholder="Why is this worth pursuing?"
+                placeholder={t.salesContextPlaceholder}
                 className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#3c4a54] outline-none placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
               />
             </label>
@@ -463,7 +468,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               disabled={qualifySubmitting}
               className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
             >
-              {qualifySubmitting ? 'Qualifying…' : 'Create opportunity'}
+              {qualifySubmitting ? t.qualifying : t.createOpportunity}
             </button>
             <button
               type="button"
@@ -473,7 +478,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               }}
               className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
             >
-              Cancel
+              {m.common.cancel}
             </button>
           </div>
         </div>
@@ -484,25 +489,25 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-[#1c2831]">Lead overview</h2>
-                <p className="mt-1 text-[10px] text-[#8a959d]">Captured {lead.receivedAt.toLocaleDateString()} at {lead.receivedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                <h2 className="text-sm font-semibold text-[#1c2831]">{t.overview}</h2>
+                <p className="mt-1 text-[10px] text-[#8a959d]">{t.captured(format.date(lead.receivedAt), format.time(lead.receivedAt))}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">Source</span>
-                <Badge value={lead.sourceName as BadgeValue} />
+                <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{m.leads.source}</span>
+                <Badge value={lead.sourceName as BadgeValue} label={sourceLabel} />
               </div>
             </div>
             <div className="mt-5 grid gap-x-8 border-t border-[#e5eaec] pt-3 sm:grid-cols-2">
-              <InfoLine icon="phone" label="Phone" value={lead.contactPhone ?? 'Not provided'} />
-              <InfoLine icon="mail" label="Email" value={lead.contactEmail ?? 'Not provided'} />
-              <InfoLine icon="sparkles" label="Product interest" value={lead.productCategoryName ?? 'Not specified'} />
-              <InfoLine icon="team" label="Assigned owner" value={lead.ownerName} />
-              {lead.campaignName && <InfoLine icon="target" label="Campaign" value={lead.campaignName} />}
-              {lead.accountName && <InfoLine icon="building" label="Account" value={lead.accountName} />}
+              <InfoLine icon="phone" label={m.leads.phone} value={lead.contactPhone ?? m.common.notProvided} />
+              <InfoLine icon="mail" label={m.leads.email} value={lead.contactEmail ?? m.common.notProvided} />
+              <InfoLine icon="sparkles" label={m.leads.productInterest} value={productLabel ?? m.common.notSpecified} />
+              <InfoLine icon="team" label={m.leads.owner} value={lead.ownerName} />
+              {lead.campaignName && <InfoLine icon="target" label={m.leads.campaign} value={lead.campaignName} />}
+              {lead.accountName && <InfoLine icon="building" label={t.account} value={lead.accountName} />}
             </div>
             {lead.note && (
               <div className="mt-3 rounded-lg bg-[#f7f9fa] p-4">
-                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">Inquiry context</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{m.leads.inquiryContext}</p>
                 <p className="mt-2 text-[11px] leading-5 text-[#394750]">{lead.note}</p>
               </div>
             )}
@@ -511,10 +516,9 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-[#1c2831]">Next actions</h2>
+                <h2 className="text-sm font-semibold text-[#1c2831]">{t.nextActions}</h2>
                 <p className="mt-0.5 text-[10px] text-[#8a959d]">
-                  What was promised on this lead, before it becomes a deal. Anything outstanding
-                  here moves to the opportunity when the lead is qualified.
+                  {t.nextActionsHint}
                 </p>
               </div>
               {canScheduleFollowUp ? (
@@ -527,7 +531,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dce2e5] bg-white px-3 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                 >
                   <CrmIcon name={followUpOpen ? 'x' : 'plus'} className="h-3.5 w-3.5" />
-                  Schedule follow-up
+                  {t.scheduleFollowUp}
                 </button>
               ) : null}
             </div>
@@ -537,7 +541,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
-                      Action
+                      {t.action}
                     </span>
                     <select
                       value={followUpType}
@@ -546,14 +550,14 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     >
                       {FOLLOW_UP_ACTION_TYPES.map((type) => (
                         <option key={type} value={type}>
-                          {ACTION_TYPE_LABELS[type]}
+                          {actionLabel(type)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label className="block">
                     <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
-                      Due
+                      {t.due}
                     </span>
                     <input
                       type="datetime-local"
@@ -565,13 +569,13 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 </div>
                 <label className="mt-3 block">
                   <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">
-                    Note (optional)
+                    {t.noteOptional}
                   </span>
                   <input
                     type="text"
                     value={followUpNote}
                     onChange={(event) => setFollowUpNote(event.target.value)}
-                    placeholder="What will this action cover?"
+                    placeholder={t.followUpPlaceholder}
                     className="mt-1.5 h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
                   />
                 </label>
@@ -586,7 +590,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     disabled={followUpSubmitting}
                     className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                   >
-                    {followUpSubmitting ? 'Scheduling…' : 'Schedule'}
+                    {followUpSubmitting ? t.scheduling : t.schedule}
                   </button>
                   <button
                     type="button"
@@ -596,7 +600,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     }}
                     className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
-                    Cancel
+                    {m.common.cancel}
                   </button>
                 </div>
               </form>
@@ -604,7 +608,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
             <div className="mt-4 border-t border-[#e5eaec] pt-4">
               {pendingFollowUps.length === 0 && completedFollowUps.length === 0 ? (
-                <p className="text-[10px] text-[#8a959d]">No actions recorded on this lead yet.</p>
+                <p className="text-[10px] text-[#8a959d]">{t.noActions}</p>
               ) : (
                 <div className="space-y-2.5">
                   {pendingFollowUps.map((followUp) => {
@@ -613,16 +617,15 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                       <div key={followUp.id} className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="flex items-center gap-2 text-[11px] font-semibold text-[#35424b]">
-                            {ACTION_TYPE_LABELS[followUp.actionType]}
+                            {actionLabel(followUp.actionType)}
                             {overdue ? (
                               <span className="rounded-full bg-[#ffeaeb] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#bd3941]">
-                                Overdue
+                                {t.overdue}
                               </span>
                             ) : null}
                           </p>
                           <p className="mt-0.5 text-[9px] text-[#8b969e]">
-                            Due {followUp.dueAt.toLocaleDateString()}{' '}
-                            {followUp.dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {t.dueAt(format.date(followUp.dueAt), format.time(followUp.dueAt))}
                             {followUp.note ? ` · ${followUp.note}` : null}
                           </p>
                         </div>
@@ -632,7 +635,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                             onClick={() => openComplete(followUp)}
                             className="h-7 shrink-0 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
                           >
-                            Complete
+                            {t.complete}
                           </button>
                         ) : null}
                       </div>
@@ -642,15 +645,15 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     <div key={followUp.id} className="flex items-center justify-between gap-3 opacity-70">
                       <div className="min-w-0">
                         <p className="text-[11px] font-semibold text-[#35424b]">
-                          {ACTION_TYPE_LABELS[followUp.actionType]}
+                          {actionLabel(followUp.actionType)}
                         </p>
                         <p className="mt-0.5 text-[9px] text-[#8b969e]">
-                          Done {followUp.completedAt?.toLocaleDateString()}
+                          {followUp.completedAt ? t.doneAt(format.date(followUp.completedAt)) : null}
                           {followUp.note ? ` · ${followUp.note}` : null}
                         </p>
                       </div>
                       <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.08em] text-[#14815f]">
-                        Completed
+                        {t.completed}
                       </span>
                     </div>
                   ))}
@@ -662,10 +665,9 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-[#1c2831]">Clinic / account</h2>
+                <h2 className="text-sm font-semibold text-[#1c2831]">{t.clinicTitle}</h2>
                 <p className="mt-0.5 text-[10px] text-[#8a959d]">
-                  The clinic this doctor works with. The contact may belong to several clinics;
-                  this is the one the inquiry is tracked against.
+                  {t.clinicHint}
                 </p>
               </div>
               {canMutate && !isArchived ? (
@@ -678,39 +680,39 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dce2e5] bg-white px-3 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                 >
                   <CrmIcon name={accountOpen ? 'x' : 'plus'} className="h-3.5 w-3.5" />
-                  {lead.accountName ? 'Change clinic' : 'Link clinic'}
+                  {lead.accountName ? t.changeClinic : t.linkClinic}
                 </button>
               ) : null}
             </div>
 
             <div className="mt-4 grid gap-3 border-t border-[#e5eaec] pt-4 sm:grid-cols-3">
               <div className="rounded-lg bg-[#f7f9fa] p-3">
-                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">Contact</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{t.contact}</p>
                 <p className="mt-2 text-[11px] font-semibold text-[#1c2831]">{lead.contactName}</p>
-                <p className="mt-1 text-[9px] font-medium text-[#188c81]">Resolved</p>
+                <p className="mt-1 text-[9px] font-medium text-[#188c81]">{t.resolved}</p>
               </div>
               <div className="rounded-lg bg-[#f7f9fa] p-3">
-                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">Clinic</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{t.clinic}</p>
                 <p className="mt-2 text-[11px] font-semibold text-[#1c2831]">
-                  {lead.accountName ?? 'No clinic linked'}
+                  {lead.accountName ?? t.noClinic}
                 </p>
                 <p className="mt-1 text-[9px] font-medium text-[#188c81]">
-                  {lead.accountName ? 'Linked' : 'Optional'}
+                  {lead.accountName ? t.linked : t.optional}
                 </p>
               </div>
               <div className="rounded-lg bg-[#f7f9fa] p-3">
-                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">Commercial</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{t.commercial}</p>
                 <p className="mt-2 text-[11px] font-semibold text-[#1c2831]">
                   {opportunityId ? (
                     <Link href={`/crm/opportunities/${opportunityId}`} className="text-[#188c81] hover:underline">
-                      View opportunity
+                      {t.viewOpportunity}
                     </Link>
                   ) : (
-                    'Not qualified yet'
+                    t.notQualified
                   )}
                 </p>
                 <p className="mt-1 text-[9px] font-medium text-[#188c81]">
-                  {qualifiedAt ? `Qualified ${qualifiedAt.toLocaleDateString()}` : 'Lead stage'}
+                  {qualifiedAt ? t.qualifiedOn(format.date(qualifiedAt)) : t.leadStage}
                 </p>
               </div>
             </div>
@@ -725,7 +727,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                       accountMode === 'link' ? 'bg-[#132932] text-white' : 'bg-white text-[#53616b] ring-1 ring-[#dfe5e8]'
                     }`}
                   >
-                    Link existing clinic
+                    {t.linkExisting}
                   </button>
                   <button
                     type="button"
@@ -734,21 +736,21 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                       accountMode === 'create' ? 'bg-[#132932] text-white' : 'bg-white text-[#53616b] ring-1 ring-[#dfe5e8]'
                     }`}
                   >
-                    Create new clinic
+                    {t.createNew}
                   </button>
                 </div>
 
                 {accountMode === 'link' ? (
                   <div className="mt-3">
                     <label className="block text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                      Clinic
+                      {t.clinic}
                     </label>
                     <select
                       value={accountSelectId}
                       onChange={(event) => setAccountSelectId(event.target.value)}
                       className="h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] focus:border-[#18b6a4]"
                     >
-                      <option value="">Choose a clinic…</option>
+                      <option value="">{t.chooseClinicOption}</option>
                       {accounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.name}
@@ -757,20 +759,20 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     </select>
                     {accounts.length === 0 ? (
                       <p className="mt-1.5 text-[10px] text-[#8a959d]">
-                        No clinics exist yet. Create the first one.
+                        {t.noClinicsYet}
                       </p>
                     ) : null}
                   </div>
                 ) : (
                   <div className="mt-3">
                     <label className="block text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                      Clinic name
+                      {t.clinicName}
                     </label>
                     <input
                       type="text"
                       value={accountNewName}
                       onChange={(event) => setAccountNewName(event.target.value)}
-                      placeholder="e.g. Smile Dental Clinic"
+                      placeholder={t.clinicNamePlaceholder}
                       className="h-9 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] text-[#1c2831] focus:border-[#18b6a4]"
                     />
                   </div>
@@ -789,7 +791,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     disabled={accountSubmitting}
                     className="rounded-lg bg-[#132932] px-3.5 py-2 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                   >
-                    {accountSubmitting ? 'Linking…' : 'Link clinic'}
+                    {accountSubmitting ? t.linking : t.linkClinic}
                   </button>
                   <button
                     type="button"
@@ -799,7 +801,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     }}
                     className="rounded-lg border border-[#dbe2e5] bg-white px-3.5 py-2 text-[10px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                   >
-                    Cancel
+                    {m.common.cancel}
                   </button>
                 </div>
               </div>
@@ -807,18 +809,17 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
           </section>
 
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
-            <h2 className="text-sm font-semibold text-[#1c2831]">Commercial timeline</h2>
-            <p className="mt-0.5 text-[10px] text-[#8a959d]">What has happened to this inquiry so far</p>
+            <h2 className="text-sm font-semibold text-[#1c2831]">{t.timeline}</h2>
+            <p className="mt-0.5 text-[10px] text-[#8a959d]">{t.timelineHint}</p>
             <div className="mt-4 space-y-3 border-t border-[#e5eaec] pt-4">
               <div className="flex items-start gap-3">
                 <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#edf6f5] text-[#16877b]">
                   <CrmIcon name="leads" className="h-3 w-3" />
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold text-[#35424b]">Lead received</p>
+                  <p className="text-[11px] font-semibold text-[#35424b]">{t.receivedEvent}</p>
                   <p className="mt-0.5 text-[9px] text-[#8b969e]">
-                    {lead.receivedAt.toLocaleDateString()} ·{' '}
-                    {lead.receivedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {format.date(lead.receivedAt)} · {format.time(lead.receivedAt)}
                   </p>
                 </div>
               </div>
@@ -828,10 +829,9 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                     <CrmIcon name="check" className="h-3 w-3" />
                   </span>
                   <div>
-                    <p className="text-[11px] font-semibold text-[#35424b]">Qualified into an opportunity</p>
+                    <p className="text-[11px] font-semibold text-[#35424b]">{t.qualifiedEvent}</p>
                     <p className="mt-0.5 text-[9px] text-[#8b969e]">
-                      {qualifiedAt.toLocaleDateString()} ·{' '}
-                      {qualifiedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {format.date(qualifiedAt)} · {format.time(qualifiedAt)}
                     </p>
                   </div>
                 </div>
@@ -841,12 +841,12 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   href={`/crm/opportunities/${opportunityId}`}
                   className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#118e82] hover:text-[#08756b]"
                 >
-                  Open full activity timeline
+                  {t.openTimeline}
                   <CrmIcon name="arrow" className="h-3 w-3" />
                 </Link>
               ) : (
                 <p className="text-[10px] text-[#8a959d]">
-                  Qualify this lead to start the commercial timeline.
+                  {t.qualifyToStart}
                 </p>
               )}
             </div>
@@ -855,38 +855,38 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
         <aside className="min-w-0 space-y-4">
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
-            <h2 className="text-xs font-semibold text-[#8a959d]">Lead ownership</h2>
+            <h2 className="text-xs font-semibold text-[#8a959d]">{t.ownership}</h2>
             <div className="mt-4 flex items-center gap-3">
               <Avatar name={lead.ownerName} size="md" />
               <div>
                 <p className="text-[11px] font-semibold text-[#1c2831]">{lead.ownerName}</p>
-                <p className="mt-0.5 text-[9px] text-[#8a959d]">Assigned sales representative</p>
+                <p className="mt-0.5 text-[9px] text-[#8a959d]">{t.ownerRole}</p>
               </div>
             </div>
           </section>
 
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
-            <h2 className="text-xs font-semibold text-[#8a959d]">Record readiness</h2>
+            <h2 className="text-xs font-semibold text-[#8a959d]">{t.readiness}</h2>
             <div className="mt-4 space-y-3">
               <p className="flex items-center gap-2 text-[10px] font-medium text-[#53616a]">
                 <span className="grid h-5 w-5 place-items-center rounded-full bg-[#def4f0] text-[#188c81]">
                   <CrmIcon name="check" className="h-3 w-3" />
                 </span>
-                Contact details captured
+                {t.contactCaptured}
               </p>
-              {lead.productCategoryName ? (
+              {productLabel ? (
                 <p className="flex items-center gap-2 text-[10px] font-medium text-[#53616a]">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-[#def4f0] text-[#188c81]">
                     <CrmIcon name="check" className="h-3 w-3" />
                   </span>
-                  Product interest qualified
+                  {t.productQualified}
                 </p>
               ) : (
                 <p className="flex items-center gap-2 text-[10px] font-medium text-[#8a959d]">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-[#e9edef] text-[#9aa3aa]">
                     <CrmIcon name="x" className="h-3 w-3" />
                   </span>
-                  Product interest qualified
+                  {t.productQualified}
                 </p>
               )}
               {lead.accountName ? (
@@ -894,14 +894,14 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-[#def4f0] text-[#188c81]">
                     <CrmIcon name="check" className="h-3 w-3" />
                   </span>
-                  Account linked
+                  {t.accountLinked}
                 </p>
               ) : (
                 <p className="flex items-center gap-2 text-[10px] font-medium text-[#8a959d]">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-[#e9edef] text-[#9aa3aa]">
                     <CrmIcon name="x" className="h-3 w-3" />
                   </span>
-                  Account linked (optional)
+                  {t.accountLinkedOptional}
                 </p>
               )}
             </div>
@@ -913,21 +913,21 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
       {disqualifyOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-white border border-[#dfe5e8] p-5 shadow-xl">
-            <h2 className="text-lg font-semibold text-[#1c2831]">Disqualify lead</h2>
-            <p className="mt-1 text-sm text-[#53616a]">This action cannot be undone. The lead will be marked as disqualified.</p>
+            <h2 className="text-lg font-semibold text-[#1c2831]">{t.disqualifyTitle}</h2>
+            <p className="mt-1 text-sm text-[#53616a]">{t.disqualifyWarning}</p>
 
             <div className="mt-4 space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">Reason *</label>
+                <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">{t.reason} *</label>
                 <select
                   value={disqualifyReasonId}
                   onChange={(e) => setDisqualifyReasonId(e.target.value)}
                   className="w-full h-9 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] text-[#1c2831] focus:border-[#18b6a4]"
                 >
-                  <option value="">Select reason</option>
+                  <option value="">{t.selectReason}</option>
                   {disqualifyReasons.map((reason) => (
                     <option key={reason.id} value={reason.id}>
-                      {reason.label}
+                      {catalogLabel(m.catalog.disqualifyReasons, reason.code, reason.label)}
                     </option>
                   ))}
                 </select>
@@ -936,14 +936,14 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               {requiresNote && (
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                    Note * (required for this reason)
+                    {t.reasonNote} *
                   </label>
                   <textarea
                     value={disqualifyNote}
                     onChange={(e) => setDisqualifyNote(e.target.value)}
                     rows={3}
                     className="w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#1c2831] placeholder-[#94a0a9] focus:border-[#18b6a4] resize-none"
-                    placeholder="Explain why this lead is being disqualified..."
+                    placeholder={t.disqualifyPlaceholder}
                   />
                 </div>
               )}
@@ -960,7 +960,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-4 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
                 disabled={disqualifySubmitting}
               >
-                Cancel
+                {m.common.cancel}
               </button>
               <button
                 type="button"
@@ -968,7 +968,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#c43f47] px-4 text-[11px] font-semibold text-white transition hover:bg-[#a53239] disabled:opacity-50"
                 disabled={disqualifySubmitting}
               >
-                {disqualifySubmitting ? 'Disqualifying...' : 'Disqualify lead'}
+                {disqualifySubmitting ? t.disqualifying : t.disqualifyConfirm}
               </button>
             </div>
           </div>
@@ -982,18 +982,17 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
             onSubmit={handleCompleteSubmit}
             role="dialog"
             aria-modal="true"
-            aria-label="Complete follow-up"
+            aria-label={t.completeTitle}
             className="w-full max-w-md rounded-xl border border-[#dfe5e8] bg-white p-5 shadow-xl"
           >
-            <h2 className="text-lg font-semibold text-[#1c2831]">Complete follow-up</h2>
+            <h2 className="text-lg font-semibold text-[#1c2831]">{t.completeTitle}</h2>
             <p className="mt-1 text-sm text-[#53616a]">
-              {ACTION_TYPE_LABELS[completing.actionType]} · due{' '}
-              {completing.dueAt.toLocaleDateString()}
+              {t.completeSubtitle(actionLabel(completing.actionType), format.date(completing.dueAt))}
             </p>
 
             <div className="mt-4">
               <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Outcome *
+                {t.outcome} *
               </label>
               <textarea
                 value={completionNote}
@@ -1001,7 +1000,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 rows={3}
                 autoFocus
                 className="w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#1c2831] placeholder-[#94a0a9] focus:border-[#18b6a4] resize-none"
-                placeholder="What actually happened on this action?"
+                placeholder={t.outcomePlaceholder}
               />
             </div>
 
@@ -1018,14 +1017,14 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 disabled={completingSubmitting}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-4 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
               >
-                Cancel
+                {m.common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={completingSubmitting || completionNote.trim().length === 0}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-50"
               >
-                {completingSubmitting ? 'Saving…' : 'Complete'}
+                {completingSubmitting ? m.common.saving : t.complete}
               </button>
             </div>
           </form>

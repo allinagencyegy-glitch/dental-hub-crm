@@ -1,8 +1,12 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { listLeadsAction } from '@/server/crm/leads/actions';
 import { LeadsList } from './LeadsList';
 
-export const metadata = { title: 'Leads | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.leads.list.pageTitle) };
+}
 
 const VALID_STATUSES = ['NEW', 'CONTACTED', 'DISQUALIFIED'] as const;
 type LeadStatus = (typeof VALID_STATUSES)[number];

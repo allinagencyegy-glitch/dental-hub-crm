@@ -3,6 +3,7 @@ import type { Client } from 'pg';
 import { connectTestDb, uniqueEmail, TEST_PASSWORD } from './setup/db';
 import { HttpClient, LOCALE_COOKIE, parseHiddenFields, type HttpResponse } from './setup/http';
 import { createUser } from '../../src/server/users/repository';
+import { captureLeadUseCase } from '../../src/server/crm/leads/service';
 
 function visitor(locale: 'ar' | 'en' | null): HttpClient {
   return new HttpClient(inject('baseUrl'), locale);
@@ -162,6 +163,51 @@ describe('interface language', () => {
       const response = await http.request('/crm/settings/password', { method: 'POST', body });
 
       expect(response.body).toContain('كلمة المرور الحالية غير صحيحة.');
+    });
+
+    it('shows the leads pages in Arabic, catalog names included', async () => {
+      const rep = await createUser(db, {
+        displayName: 'Arabic Leads Rep',
+        email: uniqueEmail('arabic.leads'),
+        password: TEST_PASSWORD,
+        role: 'SALES_REP',
+      });
+      const captured = await captureLeadUseCase(
+        { userId: rep.id, role: 'SALES_REP' },
+        {
+          fullName: 'Dr. Arabic Lead',
+          email: uniqueEmail('arabic.lead.contact'),
+          sourceCode: 'whatsapp',
+          productCategoryCode: 'dental_units',
+        },
+        db,
+      );
+      if (!captured.ok) throw new Error(`capture failed: ${captured.message}`);
+
+      const http = visitor('ar');
+      expect((await http.submitForm('/login', { email: rep.email, password: TEST_PASSWORD })).status).toBe(303);
+
+      const inbox = (await http.get('/crm/leads')).body;
+      for (const text of ['صندوق العملاء المحتملين', 'جديد', 'واتساب', 'وحدات الأسنان', 'إضافة عميل محتمل']) {
+        expect(inbox).toContain(text);
+      }
+      expect(inbox).toContain('<title>العملاء المحتملون | Dental Hub CRM</title>');
+      expect(inbox).not.toContain('Lead inbox');
+
+      const detail = (await http.get(`/crm/leads/${captured.leadId}`)).body;
+      for (const text of ['ملخص العميل المحتمل', 'الخطوات القادمة', 'تحويل إلى فرصة', 'Dr. Arabic Lead']) {
+        expect(detail).toContain(text);
+      }
+
+      expect((await http.get('/crm/leads/capture')).body).toContain('إضافة عميل محتمل جديد');
+      expect((await http.get(`/crm/leads/${captured.leadId}/edit`)).body).toContain('تعديل العميل المحتمل');
+
+      // The same lead, in English, for a browser that chose English.
+      const english = visitor('en');
+      await english.submitForm('/login', { email: rep.email, password: TEST_PASSWORD });
+      const englishDetail = (await english.get(`/crm/leads/${captured.leadId}`)).body;
+      expect(englishDetail).toContain('Lead overview');
+      expect(englishDetail).toContain('Dental units');
     });
   });
 });

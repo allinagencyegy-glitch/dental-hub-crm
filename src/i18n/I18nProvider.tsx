@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import { DEFAULT_LOCALE, type Locale } from './config';
+import { formatters, type Formatters } from './format';
 import { messagesFor, type Messages } from './messages';
 
 const LocaleContext = createContext<Locale>(DEFAULT_LOCALE);
@@ -21,4 +22,8 @@ export function useLocale(): Locale {
 
 export function useMessages(): Messages {
   return messagesFor(useLocale());
+}
+
+export function useFormatters(): Formatters {
+  return formatters(useLocale());
 }

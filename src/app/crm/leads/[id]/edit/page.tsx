@@ -1,9 +1,13 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { getLeadDetailAction, getLeadCaptureCatalogAction, getAssignableOwnersAction } from '@/server/crm/leads/actions';
 import { LeadEditForm } from './LeadEditForm';
 import { notFound } from 'next/navigation';
 
-export const metadata = { title: 'Edit Lead | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.leads.edit.pageTitle) };
+}
 
 interface EditLeadPageProps {
   params: Promise<{ id: string }>;

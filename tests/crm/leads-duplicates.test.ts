@@ -143,6 +143,8 @@ describe('duplicate lead prevention', () => {
     if (asRep2.ok) return;
     expect(asRep2.error).toBe('DUPLICATE_LEAD');
     expect(asRep2.message).toContain('owned by Dup Rep One');
+    // The owner's name travels on its own too, for the message in the reader's language.
+    expect(asRep2.existingOwnerName).toBe('Dup Rep One');
     expect(asRep2.existingLeadId).toBeUndefined();
 
     const asManager = await capture(manager, { email });

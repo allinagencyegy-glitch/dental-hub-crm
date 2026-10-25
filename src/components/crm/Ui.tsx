@@ -18,12 +18,13 @@ const badgeStyles: Record<BadgeValue, string> = {
   'ON HOLD': 'bg-[#edf0f2] text-[#63707a]',
 };
 
-export function Badge({ value, dot = false }: { value: BadgeValue; dot?: boolean }) {
-  return <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.08em] ${badgeStyles[value]}`}>{dot ? <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" /> : null}{value}</span>;
+/** `value` picks the colour; `label` is the text shown, in the reader's language. */
+export function Badge({ value, label, dot = false }: { value: BadgeValue; label?: string; dot?: boolean }) {
+  return <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.08em] ${badgeStyles[value] ?? 'bg-[#edf0f2] text-[#63707a]'}`}>{dot ? <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" /> : null}{label ?? value}</span>;
 }
 
 export function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
-  const initials = name.replace('Dr. ', '').split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const initials = name.replace(/^(Dr\.|د\.)\s*/, '').split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
   const sizes = { sm: 'h-7 w-7 text-[9px]', md: 'h-9 w-9 text-[10px]', lg: 'h-14 w-14 text-sm' };
   return <span aria-hidden="true" className={`grid shrink-0 place-items-center rounded-full bg-[#dff4f1] font-bold text-[#087c71] ring-1 ring-[#bce6df] ${sizes[size]}`}>{initials}</span>;
 }

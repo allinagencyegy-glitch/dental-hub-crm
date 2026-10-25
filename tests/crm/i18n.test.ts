@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LOCALE, LOCALES, isLocale, textDirection } from '../../src/i18n/config';
 import { messagesFor, type Messages } from '../../src/i18n/messages';
+import { catalogLabel, formatters } from '../../src/i18n/format';
 
 /** Every leaf of a message tree, by dotted path. */
 function leaves(tree: object, prefix = ''): Map<string, unknown> {
@@ -69,5 +72,57 @@ describe('message catalogues', () => {
     expect(tooManyAttempts(15)).toContain('بعد 15 دقيقة.');
     expect(messagesFor('en').login.tooManyAttempts(1)).toContain('1 minute.');
     expect(messagesFor('en').login.tooManyAttempts(15)).toContain('15 minutes.');
+  });
+});
+
+describe('catalog labels', () => {
+  /** The codes a migration seeds into `table`, read from its INSERT. */
+  function seededCodes(table: string, kind?: string): string[] {
+    const sql = readFileSync(path.resolve(process.cwd(), 'migrations/0002_crm_catalogs.sql'), 'utf8');
+    const insert = new RegExp(`INSERT INTO ${table} \\([^)]*\\) VALUES([\\s\\S]*?);`).exec(sql)?.[1] ?? '';
+    const rows = [...insert.matchAll(/\(([^)]*)\)/g)].map((row) => row[1].split(',').map((cell) => cell.trim().replace(/^'|'$/g, '')));
+    return kind ? rows.filter((row) => row[0] === kind).map((row) => row[1]) : rows.map((row) => row[0]);
+  }
+
+  it('translates every seeded source, product category and disqualification reason', () => {
+    const sources = seededCodes('crm_source');
+    const categories = seededCodes('crm_product_category');
+    const reasons = seededCodes('crm_outcome_reason', 'disqualify');
+    expect(sources).toContain('whatsapp');
+    expect(categories).toContain('dental_units');
+    expect(reasons).toContain('wrong_number');
+
+    for (const m of [messagesFor('ar'), messagesFor('en')]) {
+      expect(Object.keys(m.catalog.sources).sort()).toEqual([...sources].sort());
+      expect(Object.keys(m.catalog.productCategories).sort()).toEqual([...categories].sort());
+      expect(Object.keys(m.catalog.disqualifyReasons).sort()).toEqual([...reasons].sort());
+    }
+  });
+
+  it('falls back to the stored name for a row with no translation', () => {
+    const { sources } = messagesFor('ar').catalog;
+    expect(catalogLabel(sources, 'whatsapp', 'WhatsApp')).toBe('واتساب');
+    expect(catalogLabel(sources, 'trade_fair_2027', 'Trade fair 2027')).toBe('Trade fair 2027');
+    expect(catalogLabel(sources, null, 'Website')).toBe('Website');
+    expect(catalogLabel(sources, 'toString', 'Website')).toBe('Website');
+  });
+});
+
+describe('formatting', () => {
+  // 13:30 UTC is 16:30 in Cairo (UTC+3 under summer time on this date).
+  const instant = new Date('2026-10-25T13:30:00Z');
+
+  it('writes dates and times on Cairo time, with Latin digits in Arabic', () => {
+    const ar = formatters('ar');
+    expect(ar.date(instant)).toBe('25 أكتوبر 2026');
+    expect(ar.time(instant)).toMatch(/^04:30\s?م$/);
+    expect(ar.number(1250000.5)).toBe('1,250,000.5');
+    expect(ar.dateTime(instant)).not.toMatch(/[٠-٩]/);
+  });
+
+  it('writes English dates on Cairo time too', () => {
+    const en = formatters('en');
+    expect(en.date(instant)).toBe('Oct 25, 2026');
+    expect(en.time(instant)).toMatch(/^04:30\sPM$/);
   });
 });

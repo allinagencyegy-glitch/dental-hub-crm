@@ -3,6 +3,8 @@
 import 'server-only';
 import { z } from 'zod';
 import { assertPermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
+import type { Messages } from '@/i18n/messages';
 import {
   captureLeadUseCase,
   listLeadsUseCase,
@@ -24,45 +26,40 @@ import {
   type UpdateLeadResult,
   type LinkLeadAccountResult,
 } from './service';
-import {
-  DuplicateOpenLeadError,
-  LeadNotFoundError,
-  LeadForbiddenError,
-  InvalidLeadStatusTransitionError,
-  InvalidDisqualifyReasonError,
-  type Lead,
-  type LeadDetail,
-  type LeadStatus,
-} from './repository';
+import { localise, statusFailure } from './messages';
+import type { Lead, LeadDetail, LeadStatus } from './repository';
+
+const MAX_CLINIC_NAME = 200;
 
 /**
  * Input schema for lead capture.
  * SALES_REP: owner_user_id is forced to current session user.
  * SALES_MANAGER/ADMIN: may explicitly assign an owner.
  */
-const captureLeadSchema = z.object({
-  fullName: z.string().min(1).max(200),
-  phone: z.string().max(50).optional().nullable(),
-  email: z.email().max(254).optional().nullable(),
-  sourceCode: z.string().min(1),
-  campaignCode: z.string().optional().nullable(),
-  productCategoryCode: z.string().optional().nullable(),
-  note: z.string().max(5000).optional().nullable(),
-  ownerUserId: z.string().uuid().optional().nullable(),
-});
-
-
+function captureLeadSchema(m: Messages) {
+  return z.object({
+    fullName: z.string(m.leads.fullNameRequired).trim().min(1, m.leads.fullNameRequired).max(200),
+    phone: z.string().max(50).optional().nullable(),
+    email: z.email(m.leads.invalidEmail).max(254).optional().nullable(),
+    sourceCode: z.string(m.leads.sourceRequired).min(1, m.leads.sourceRequired),
+    campaignCode: z.string().optional().nullable(),
+    productCategoryCode: z.string().optional().nullable(),
+    note: z.string().max(5000).optional().nullable(),
+    ownerUserId: z.uuid(m.leads.errors.ownerInvalid).optional().nullable(),
+  });
+}
 
 export async function captureLeadAction(input: CaptureLeadInput): Promise<CaptureLeadResult> {
   const session = await assertPermission('leads:write');
-  const parsed = captureLeadSchema.safeParse(input);
+  const m = await getMessages();
+  const parsed = captureLeadSchema(m).safeParse(input);
 
   if (!parsed.success) {
-    return { ok: false, error: 'VALIDATION', message: 'Invalid input.' };
+    return { ok: false, error: 'VALIDATION', message: parsed.error.issues[0]?.message ?? m.common.invalidInput };
   }
 
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return captureLeadUseCase(actor, parsed.data);
+  return localise(await captureLeadUseCase(actor, parsed.data), m);
 }
 
 /**
@@ -96,9 +93,8 @@ export async function markLeadContactedAction(leadId: string): Promise<{ ok: tru
     const lead = await markLeadContactedUseCase(actor, leadId);
     return { ok: true, lead };
   } catch (error) {
-    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
-    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
-    if (error instanceof InvalidLeadStatusTransitionError) return { ok: false, error: 'INVALID_TRANSITION', message: error.message };
+    const failure = statusFailure(error, await getMessages());
+    if (failure) return failure;
     throw error;
   }
 }
@@ -117,10 +113,8 @@ export async function disqualifyLeadAction(
     const lead = await disqualifyLeadUseCase(actor, leadId, input);
     return { ok: true, lead };
   } catch (error) {
-    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
-    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
-    if (error instanceof InvalidLeadStatusTransitionError) return { ok: false, error: 'INVALID_TRANSITION', message: error.message };
-    if (error instanceof InvalidDisqualifyReasonError) return { ok: false, error: 'INVALID_REASON', message: error.message };
+    const failure = statusFailure(error, await getMessages());
+    if (failure) return failure;
     throw error;
   }
 }
@@ -172,8 +166,8 @@ export async function archiveLeadAction(leadId: string): Promise<{ ok: true; lea
     const lead = await archiveLeadUseCase(actor, leadId);
     return { ok: true, lead };
   } catch (error) {
-    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
-    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    const failure = statusFailure(error, await getMessages());
+    if (failure) return failure;
     throw error;
   }
 }
@@ -189,9 +183,8 @@ export async function restoreLeadAction(leadId: string): Promise<{ ok: true; lea
     const lead = await restoreLeadUseCase(actor, leadId);
     return { ok: true, lead };
   } catch (error) {
-    if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
-    if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
-    if (error instanceof DuplicateOpenLeadError) return { ok: false, error: 'DUPLICATE_LEAD', message: error.message };
+    const failure = statusFailure(error, await getMessages());
+    if (failure) return failure;
     throw error;
   }
 }
@@ -204,7 +197,7 @@ export async function updateLeadAction(leadId: string, input: UpdateLeadInput): 
   const session = await assertPermission('leads:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
 
-  return updateLeadUseCase(actor, leadId, input);
+  return localise(await updateLeadUseCase(actor, leadId, input), await getMessages());
 }
 
 /**
@@ -217,6 +210,17 @@ export async function linkLeadToAccountAction(
 ): Promise<LinkLeadAccountResult> {
   const session = await assertPermission('leads:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
+  const m = await getMessages();
 
-  return linkLeadToAccountUseCase(actor, leadId, input);
+  // The use case checks these too; asking here first says which one in the
+  // reader's language.
+  const newAccountName = input.newAccountName?.trim();
+  if (!input.accountId && !newAccountName) {
+    return { ok: false, error: 'VALIDATION', message: m.leads.errors.chooseOrNameClinic };
+  }
+  if (!input.accountId && newAccountName && newAccountName.length > MAX_CLINIC_NAME) {
+    return { ok: false, error: 'VALIDATION', message: m.leads.errors.clinicNameTooLong(MAX_CLINIC_NAME) };
+  }
+
+  return localise(await linkLeadToAccountUseCase(actor, leadId, input), m);
 }

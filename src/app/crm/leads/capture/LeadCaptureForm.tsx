@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { captureLeadAction } from '@/server/crm/leads/actions';
-import { ROLE_LABELS, isRole } from '@/server/authz/permissions';
+import { isRole } from '@/server/authz/permissions';
+import { useMessages } from '@/i18n/I18nProvider';
+import { catalogLabel } from '@/i18n/format';
 
 interface SourceOption {
   id: string;
@@ -41,6 +43,8 @@ interface CaptureLeadFormProps {
 
 export function LeadCaptureForm({ sources, productCategories, userRole }: CaptureLeadFormProps) {
   const router = useRouter();
+  const m = useMessages();
+  const t = m.leads.capture;
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
@@ -123,11 +127,11 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
 
     // Validate required fields
     const errors: Record<string, string> = {};
-    if (!formData.fullName.trim()) errors.fullName = 'Full name is required';
-    if (!formData.sourceCode) errors.sourceCode = 'Source is required';
+    if (!formData.fullName.trim()) errors.fullName = m.leads.fullNameRequired;
+    if (!formData.sourceCode) errors.sourceCode = m.leads.sourceRequired;
     if (!formData.phone.trim() && !formData.email.trim()) {
-      errors.phone = 'At least one of phone or email is required';
-      errors.email = 'At least one of phone or email is required';
+      errors.phone = m.leads.phoneOrEmailRequired;
+      errors.email = m.leads.phoneOrEmailRequired;
     }
 
     if (Object.keys(errors).length > 0) {
@@ -157,7 +161,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
         }
       }
     } catch {
-      setError('An unexpected error occurred. Please try again.');
+      setError(m.common.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -166,9 +170,9 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader
-        eyebrow="Lead management"
-        title="Capture new lead"
-        description="Record a new inquiry. If the phone or email already belongs to a contact, the lead is added to them."
+        eyebrow={m.leads.eyebrow}
+        title={t.heading}
+        description={t.description}
       />
 
       {error && (
@@ -176,7 +180,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
           {error}
           {existingLeadId ? (
             <Link href={`/crm/leads/${existingLeadId}`} className="mt-2 block font-semibold underline">
-              Open the existing lead
+              {t.openExisting}
             </Link>
           ) : null}
         </div>
@@ -184,11 +188,11 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Contact information</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{m.leads.contactInformation}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="fullName" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Full name *
+                {m.leads.fullName} *
               </label>
               <input
                 id="fullName"
@@ -198,14 +202,14 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] placeholder-[#94a0a9] transition ${
                   fieldErrors.fullName ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
-                placeholder="Dr. Ahmed Hassan"
+                placeholder={m.leads.namePlaceholder}
                 disabled={submitting}
               />
               {fieldErrors.fullName && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors.fullName}</p>}
             </div>
             <div>
               <label htmlFor="phone" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Phone
+                {m.leads.phone}
               </label>
               <input
                 id="phone"
@@ -216,13 +220,14 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                   fieldErrors.phone ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
                 placeholder="010 1234 5678"
+                dir="ltr"
                 disabled={submitting}
               />
               {fieldErrors.phone && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors.phone}</p>}
             </div>
             <div>
               <label htmlFor="email" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Email
+                {m.leads.email}
               </label>
               <input
                 id="email"
@@ -233,20 +238,21 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                   fieldErrors.email ? 'border-[#f4c7ca] focus:border-[#c43f47]' : 'border-[#dfe4e7] focus:border-[#18b6a4]'
                 }`}
                 placeholder="ahmed@clinic.com"
+                dir="ltr"
                 disabled={submitting}
               />
               {fieldErrors.email && <p className="mt-1 text-[10px] text-[#c43f47]">{fieldErrors.email}</p>}
             </div>
           </div>
-          <p className="text-[10px] text-[#8a959d]">Phone and email are used to find an existing contact. At least one is required.</p>
+          <p className="text-[10px] text-[#8a959d]">{t.identityHint}</p>
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Source & classification</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{t.classification}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="sourceCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Source *
+                {m.leads.source} *
               </label>
               <select
                 id="sourceCode"
@@ -257,10 +263,10 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 }`}
                 disabled={submitting}
               >
-                <option value="">Select source</option>
+                <option value="">{m.leads.selectSource}</option>
                 {sources.map((source) => (
                   <option key={source.id} value={source.code}>
-                    {source.name}
+                    {catalogLabel(m.catalog.sources, source.code, source.name)}
                   </option>
                 ))}
               </select>
@@ -268,7 +274,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
             </div>
             <div>
               <label htmlFor="campaignCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Campaign
+                {m.leads.campaign}
               </label>
               <select
                 id="campaignCode"
@@ -277,9 +283,9 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] transition border-[#dfe4e7] focus:border-[#18b6a4]`}
                 disabled={submitting || loadingCampaigns || campaigns.length === 0}
               >
-                <option value="">Select campaign</option>
+                <option value="">{m.leads.selectCampaign}</option>
                 {loadingCampaigns ? (
-                  <option value="" disabled>Loading...</option>
+                  <option value="" disabled>{m.common.loading}</option>
                 ) : (
                   campaigns.map((campaign) => (
                     <option key={campaign.id} value={campaign.code}>
@@ -289,16 +295,16 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 )}
               </select>
               {!formData.sourceCode ? (
-                <p className="mt-1 text-[10px] text-[#8a959d]">Choose a source to see its campaigns.</p>
+                <p className="mt-1 text-[10px] text-[#8a959d]">{t.chooseSourceFirst}</p>
               ) : loadingCampaigns ? (
-                <p className="mt-1 text-[10px] text-[#8a959d]">Loading campaigns…</p>
+                <p className="mt-1 text-[10px] text-[#8a959d]">{t.loadingCampaigns}</p>
               ) : campaigns.length === 0 ? (
-                <p className="mt-1 text-[10px] text-[#8a959d]">No campaigns for this source.</p>
+                <p className="mt-1 text-[10px] text-[#8a959d]">{t.noCampaigns}</p>
               ) : null}
             </div>
             <div>
               <label htmlFor="productCategoryCode" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Product interest
+                {m.leads.productInterest}
               </label>
               <select
                 id="productCategoryCode"
@@ -307,10 +313,10 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 className={`w-full h-9 rounded-lg border bg-white px-3 text-[11px] text-[#17242c] transition border-[#dfe4e7] focus:border-[#18b6a4]`}
                 disabled={submitting}
               >
-                <option value="">Select product category</option>
+                <option value="">{m.leads.selectCategory}</option>
                 {productCategories.map((category) => (
                   <option key={category.id} value={category.code}>
-                    {category.name}
+                    {catalogLabel(m.catalog.productCategories, category.code, category.name)}
                   </option>
                 ))}
               </select>
@@ -320,7 +326,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
           {canAssignOwner && (
             <div>
               <label htmlFor="ownerUserId" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                Assigned owner *
+                {m.leads.owner} *
               </label>
               <select
                 id="ownerUserId"
@@ -330,27 +336,27 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
                 disabled={submitting || loadingOwners || assignableOwners.length === 0}
                 required
               >
-                <option value="">Select owner</option>
+                <option value="">{m.leads.selectOwner}</option>
                 {loadingOwners ? (
-                  <option value="" disabled>Loading...</option>
+                  <option value="" disabled>{m.common.loading}</option>
                 ) : (
                   assignableOwners.map((owner) => (
                     <option key={owner.id} value={owner.id}>
-                      {owner.displayName} ({isRole(owner.role) ? ROLE_LABELS[owner.role] : owner.role})
+                      {m.leads.ownerOption(owner.displayName, isRole(owner.role) ? m.roles[owner.role] : owner.role)}
                     </option>
                   ))
                 )}
               </select>
-              <p className="mt-1 text-[10px] text-[#8a959d]">Lead will be assigned to this salesperson.</p>
+              <p className="mt-1 text-[10px] text-[#8a959d]">{m.leads.ownerHint}</p>
             </div>
           )}
         </section>
 
         <section className="rounded-xl bg-white border border-[#dfe5e8] p-5 space-y-5">
-          <h2 className="text-sm font-semibold text-[#1c2831]">Notes</h2>
+          <h2 className="text-sm font-semibold text-[#1c2831]">{m.leads.notes}</h2>
           <div>
             <label htmlFor="note" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-              Inquiry context
+              {m.leads.inquiryContext}
             </label>
             <textarea
               id="note"
@@ -358,7 +364,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
               onChange={(e) => handleChange('note', e.target.value)}
               rows={4}
               className="w-full h-28 rounded-lg border border-[#dfe4e7] bg-white px-3 py-2 text-[11px] text-[#17242c] placeholder-[#94a0a9] transition focus:border-[#18b6a4] resize-none"
-              placeholder="Customer is looking for a 4-chair dental unit package with delivery to Alexandria..."
+              placeholder={m.leads.notePlaceholder}
               disabled={submitting}
             />
           </div>
@@ -371,7 +377,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
             className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-4 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
             disabled={submitting}
           >
-            Cancel
+            {m.common.cancel}
           </button>
           <button
             type="submit"
@@ -381,12 +387,12 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
             {submitting ? (
               <>
                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                Capturing...
+                {t.submitting}
               </>
             ) : (
               <>
                 <CrmIcon name="plus" className="h-4 w-4" />
-                Capture lead
+                {t.submit}
               </>
             )}
           </button>

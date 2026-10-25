@@ -36,6 +36,8 @@ export type LeadStatus = 'NEW' | 'CONTACTED' | 'DISQUALIFIED';
 export interface Lead {
   id: string;
   sourceId: string;
+  /** The catalog code, for a translated label. Only on rows read with joins. */
+  sourceCode: string;
   sourceName: string;
   campaignId: string | null;
   contactId: string;
@@ -43,6 +45,7 @@ export interface Lead {
   accountId: string | null;
   accountName: string | null;
   productCategoryId: string | null;
+  productCategoryCode: string | null;
   productCategoryName: string | null;
   status: LeadStatus;
   note: string | null;
@@ -60,6 +63,7 @@ export interface Lead {
 type LeadRow = {
   id: string;
   source_id: string;
+  source_code: string;
   source_name: string;
   campaign_id: string | null;
   contact_id: string;
@@ -67,6 +71,7 @@ type LeadRow = {
   account_id: string | null;
   account_name: string | null;
   product_category_id: string | null;
+  product_category_code: string | null;
   product_category_name: string | null;
   status: LeadStatus;
   note: string | null;
@@ -85,6 +90,7 @@ function toLead(row: LeadRow): Lead {
   return {
     id: row.id,
     sourceId: row.source_id,
+    sourceCode: row.source_code,
     sourceName: row.source_name,
     campaignId: row.campaign_id,
     contactId: row.contact_id,
@@ -92,6 +98,7 @@ function toLead(row: LeadRow): Lead {
     accountId: row.account_id,
     accountName: row.account_name,
     productCategoryId: row.product_category_id,
+    productCategoryCode: row.product_category_code,
     productCategoryName: row.product_category_name,
     status: row.status,
     note: row.note,
@@ -147,9 +154,11 @@ const LEAD_RETURNING_COLUMNS = `
 
 const LEAD_LIST_COLUMNS = `
   ${LEAD_COLUMNS},
+  s.code AS source_code,
   s.name AS source_name,
   c.full_name AS contact_full_name,
   a.name AS account_name,
+  pc.code AS product_category_code,
   pc.name AS product_category_name,
   u.display_name AS owner_display_name
 `;
@@ -200,8 +209,13 @@ export class InvalidLeadStatusTransitionError extends Error {
   }
 }
 
+export type DisqualifyReasonProblem = 'NOT_FOUND' | 'INACTIVE' | 'WRONG_KIND' | 'NOTE_REQUIRED';
+
 export class InvalidDisqualifyReasonError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public readonly problem: DisqualifyReasonProblem,
+  ) {
     super(message);
     this.name = 'InvalidDisqualifyReasonError';
   }
@@ -616,16 +630,16 @@ export async function disqualifyLead(
 
   const reason = reasonRows[0];
   if (!reason) {
-    throw new InvalidDisqualifyReasonError('Disqualification reason not found.');
+    throw new InvalidDisqualifyReasonError('Disqualification reason not found.', 'NOT_FOUND');
   }
   if (!reason.is_active) {
-    throw new InvalidDisqualifyReasonError('Disqualification reason is not active.');
+    throw new InvalidDisqualifyReasonError('Disqualification reason is not active.', 'INACTIVE');
   }
   if (reason.kind !== 'disqualify') {
-    throw new InvalidDisqualifyReasonError('Reason kind must be "disqualify".');
+    throw new InvalidDisqualifyReasonError('Reason kind must be "disqualify".', 'WRONG_KIND');
   }
   if (reason.requires_note && (!input.note || input.note.trim() === '')) {
-    throw new InvalidDisqualifyReasonError('This disqualification reason requires a note.');
+    throw new InvalidDisqualifyReasonError('This disqualification reason requires a note.', 'NOTE_REQUIRED');
   }
 
   const note = input.note?.trim() || null;
