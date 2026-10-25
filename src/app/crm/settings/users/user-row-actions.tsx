@@ -7,10 +7,12 @@ import {
   setUserActiveAction,
 } from '@/server/users/admin-actions';
 import { EMPTY_ADMIN_STATE, MIN_PASSWORD_LENGTH } from '@/server/auth/form-state';
-import { ROLES, ROLE_LABELS } from '@/server/authz/permissions';
+import { ROLES } from '@/server/authz/permissions';
+import { useMessages } from '@/i18n/I18nProvider';
 import type { PublicUser } from '@/server/users/dto';
 
 export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boolean }) {
+  const m = useMessages();
   const [roleState, roleAction, rolePending] = useActionState(
     changeUserRoleAction,
     EMPTY_ADMIN_STATE,
@@ -32,7 +34,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
         <form action={roleAction} className="flex items-center gap-2">
           <input type="hidden" name="userId" value={user.id} />
           <label htmlFor={`role-${user.id}`} className="sr-only">
-            Role for {user.displayName}
+            {m.users.roleFor(user.displayName)}
           </label>
           <select
             id={`role-${user.id}`}
@@ -42,7 +44,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
           >
             {ROLES.map((role) => (
               <option key={role} value={role}>
-                {ROLE_LABELS[role]}
+                {m.roles[role]}
               </option>
             ))}
           </select>
@@ -51,7 +53,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
             disabled={rolePending}
             className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
           >
-            {rolePending ? 'Saving...' : 'Save role'}
+            {rolePending ? m.common.saving : m.users.saveRole}
           </button>
         </form>
 
@@ -67,21 +69,21 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
                 : 'h-8 rounded-lg border border-[#bce6df] bg-white px-2.5 text-[11px] font-semibold text-[#087f73] transition hover:bg-[#f0fbf9] disabled:opacity-50'
             }
           >
-            {activePending ? 'Saving...' : user.isActive ? 'Deactivate' : 'Activate'}
+            {activePending ? m.common.saving : user.isActive ? m.users.deactivate : m.users.activate}
           </button>
         </form>
       </div>
 
       {/* Your own password is changed from Settings → Password instead. */}
       {isSelf ? null : (
-        <details className="text-[11px] sm:text-right">
+        <details className="text-[11px] sm:text-end">
           <summary className="cursor-pointer font-semibold text-[#53616b] hover:text-[#17242c]">
-            Reset password
+            {m.users.resetPassword}
           </summary>
           <form action={resetAction} className="mt-2 flex items-center gap-2">
             <input type="hidden" name="userId" value={user.id} />
             <label htmlFor={`password-${user.id}`} className="sr-only">
-              New password for {user.displayName}
+              {m.users.newPasswordFor(user.displayName)}
             </label>
             <input
               id={`password-${user.id}`}
@@ -90,7 +92,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
               autoComplete="new-password"
               required
               minLength={MIN_PASSWORD_LENGTH}
-              placeholder={`New password (${MIN_PASSWORD_LENGTH}+ characters)`}
+              placeholder={m.users.newPasswordPlaceholder(MIN_PASSWORD_LENGTH)}
               className="h-8 w-52 rounded-lg border border-[#dfe4e7] bg-white px-2 text-[11px] text-[#17242c] outline-none focus:border-[#18b6a4]"
             />
             <button
@@ -98,7 +100,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
               disabled={resetPending}
               className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
             >
-              {resetPending ? 'Saving...' : 'Set password'}
+              {resetPending ? m.common.saving : m.users.setPassword}
             </button>
           </form>
         </details>

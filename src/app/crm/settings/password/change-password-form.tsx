@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 import { changePasswordAction } from '@/server/auth/password-actions';
 import { EMPTY_PASSWORD_STATE, MIN_PASSWORD_LENGTH } from '@/server/auth/form-state';
+import { useMessages } from '@/i18n/I18nProvider';
 
 const LABEL_CLASS = 'block text-[10px] font-bold uppercase tracking-[0.1em] text-[#7e8992]';
 const FIELD_CLASS =
@@ -10,12 +11,13 @@ const FIELD_CLASS =
 
 export function ChangePasswordForm() {
   const [state, formAction, pending] = useActionState(changePasswordAction, EMPTY_PASSWORD_STATE);
+  const m = useMessages();
 
   return (
     <form action={formAction} className="space-y-5 rounded-xl border border-[#dfe5e8] bg-white p-5">
       <div>
         <label htmlFor="currentPassword" className={LABEL_CLASS}>
-          Current password
+          {m.password.current}
         </label>
         <input
           id="currentPassword"
@@ -29,7 +31,7 @@ export function ChangePasswordForm() {
 
       <div>
         <label htmlFor="newPassword" className={LABEL_CLASS}>
-          New password
+          {m.password.new}
         </label>
         <input
           id="newPassword"
@@ -40,12 +42,12 @@ export function ChangePasswordForm() {
           minLength={MIN_PASSWORD_LENGTH}
           className={FIELD_CLASS}
         />
-        <p className="mt-1 text-[10px] text-[#87929a]">Minimum {MIN_PASSWORD_LENGTH} characters.</p>
+        <p className="mt-1 text-[10px] text-[#87929a]">{m.common.minCharacters(MIN_PASSWORD_LENGTH)}</p>
       </div>
 
       <div>
         <label htmlFor="confirmPassword" className={LABEL_CLASS}>
-          Confirm new password
+          {m.password.confirm}
         </label>
         <input
           id="confirmPassword"
@@ -74,7 +76,7 @@ export function ChangePasswordForm() {
         disabled={pending}
         className="inline-flex h-9 items-center justify-center rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
       >
-        {pending ? 'Saving...' : 'Change password'}
+        {pending ? m.common.saving : m.password.submit}
       </button>
     </form>
   );

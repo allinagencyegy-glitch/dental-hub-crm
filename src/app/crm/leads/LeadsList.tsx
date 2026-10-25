@@ -118,7 +118,7 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
           >
             {filter.label}
             <span
-              className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] ${
+              className={`ms-2 rounded-full px-1.5 py-0.5 text-[9px] ${
                 archiveFilter === filter.value
                   ? 'bg-[#def4f0] text-[#0c8176]'
                   : 'bg-[#e9edef] text-[#78858e]'
@@ -146,7 +146,7 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
           >
             {filter.label}
             <span
-              className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] ${
+              className={`ms-2 rounded-full px-1.5 py-0.5 text-[9px] ${
                 status === filter.value || (filter.value === 'ALL' && !status)
                   ? 'bg-[#def4f0] text-[#0c8176]'
                   : 'bg-[#e9edef] text-[#78858e]'
@@ -186,7 +186,7 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
           </Link>
         </Toolbar>
         <div className="overflow-hidden border-x border-b border-[#dfe5e8] bg-white">
-          <table className="w-full table-fixed text-left">
+          <table className="w-full table-fixed text-start">
             <colgroup>
               <col className="w-[12%]" />
               <col className="w-[22%]" />
@@ -217,7 +217,7 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
                         <button
                           type="button"
                           onClick={handleSearchClear}
-                          className="ml-2 font-semibold text-[#118e82] hover:underline"
+                          className="ms-2 font-semibold text-[#118e82] hover:underline"
                         >
                           Clear search
                         </button>

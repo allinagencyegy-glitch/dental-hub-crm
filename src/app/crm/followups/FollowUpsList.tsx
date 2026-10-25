@@ -113,7 +113,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               key={entry.value}
               type="button"
               onClick={() => handleWindowChange(entry.value)}
-              className={`rounded-xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(20,35,45,0.04)] transition ${
+              className={`rounded-xl bg-white p-4 text-start shadow-[0_1px_2px_rgba(20,35,45,0.04)] transition ${
                 isActive
                   ? 'ring-2 ring-[#18b6a4]'
                   : isOverdue && counts.overdue > 0
@@ -179,7 +179,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                   <p className="text-[11px] font-semibold text-[#202e37]">
                     {ACTION_TYPE_LABELS[followUp.actionType]}
                     {followUp.isOverdue ? (
-                      <span className="ml-2 rounded-full bg-[#ffeaeb] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#bd3941]">
+                      <span className="ms-2 rounded-full bg-[#ffeaeb] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#bd3941]">
                         Overdue
                       </span>
                     ) : null}
@@ -217,7 +217,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                   </p>
                 </div>
 
-                <div className="min-w-[110px] text-right">
+                <div className="min-w-[110px] text-end">
                   <p
                     className={`whitespace-nowrap text-[10px] font-semibold ${
                       followUp.isOverdue ? 'text-[#bd454b]' : 'text-[#4e5c66]'
@@ -231,7 +231,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                 </div>
 
                 {followUp.completedAt ? (
-                  <span className="w-[92px] text-right text-[9px] font-bold uppercase tracking-[0.08em] text-[#14815f]">
+                  <span className="w-[92px] text-end text-[9px] font-bold uppercase tracking-[0.08em] text-[#14815f]">
                     Completed
                   </span>
                 ) : (

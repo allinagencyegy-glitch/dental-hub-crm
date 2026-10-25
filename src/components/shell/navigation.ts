@@ -9,28 +9,36 @@
  * a module means flipping `status` to 'available'.
  */
 import type { Permission } from '@/server/authz/permissions';
+import type { Messages } from '@/i18n/messages';
 
 export interface NavItem {
-  label: string;
+  /** Picks its label from `messages.nav` and its icon. */
+  key: NavKey;
   href?: string;
   status: 'available' | 'planned';
   permission?: Permission;
 }
 
+export type NavKey = Extract<
+  keyof Messages['nav'],
+  | 'home' | 'leads' | 'opportunities' | 'customers' | 'followUps' | 'pipeline'
+  | 'quotations' | 'reports' | 'team' | 'users' | 'password'
+>;
+
 export const PRIMARY_NAV: NavItem[] = [
-  { label: 'Home', href: '/crm', status: 'available' },
-  { label: 'Leads', href: '/crm/leads', status: 'available', permission: 'leads:read' },
-  { label: 'Opportunities', href: '/crm/opportunities', status: 'available', permission: 'opportunities:read' },
-  { label: 'Customers', status: 'planned' },
-  { label: 'Follow-ups', href: '/crm/followups', status: 'available', permission: 'followups:read' },
-  { label: 'Pipeline', href: '/crm/pipeline', status: 'available', permission: 'opportunities:read' },
-  { label: 'Quotations', status: 'planned' },
-  { label: 'Reports', status: 'planned' },
-  { label: 'Team', status: 'planned' },
+  { key: 'home', href: '/crm', status: 'available' },
+  { key: 'leads', href: '/crm/leads', status: 'available', permission: 'leads:read' },
+  { key: 'opportunities', href: '/crm/opportunities', status: 'available', permission: 'opportunities:read' },
+  { key: 'customers', status: 'planned' },
+  { key: 'followUps', href: '/crm/followups', status: 'available', permission: 'followups:read' },
+  { key: 'pipeline', href: '/crm/pipeline', status: 'available', permission: 'opportunities:read' },
+  { key: 'quotations', status: 'planned' },
+  { key: 'reports', status: 'planned' },
+  { key: 'team', status: 'planned' },
 ];
 
 export const SETTINGS_NAV: NavItem[] = [
-  { label: 'Users', href: '/crm/settings/users', status: 'available', permission: 'users:read' },
+  { key: 'users', href: '/crm/settings/users', status: 'available', permission: 'users:read' },
   // Every signed-in user manages their own password.
-  { label: 'Password', href: '/crm/settings/password', status: 'available' },
+  { key: 'password', href: '/crm/settings/password', status: 'available' },
 ];

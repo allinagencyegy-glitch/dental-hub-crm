@@ -1,3 +1,6 @@
+'use client';
+
+import { useMessages } from '@/i18n/I18nProvider';
 import { SignOutButton } from './SignOutButton';
 
 /**
@@ -18,14 +21,15 @@ function initials(displayName: string): string {
 }
 
 export function BrandBlock() {
+  const m = useMessages();
   return (
     <div className="flex h-[76px] items-center gap-3 border-b border-white/[0.07] px-6">
       <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#18b6a4] shadow-[0_8px_24px_rgba(24,182,164,0.22)]">
         <span className="text-lg font-bold tracking-[-0.08em]">DH</span>
       </div>
       <div>
-        <p className="text-[15px] font-semibold tracking-[-0.02em]">Dental Hub</p>
-        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">Sales CRM</p>
+        <p className="text-[15px] font-semibold tracking-[-0.02em]">{m.app.brand}</p>
+        <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">{m.app.tagline}</p>
       </div>
     </div>
   );

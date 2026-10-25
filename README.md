@@ -21,6 +21,9 @@ SQL, zod, vitest.
 | Follow-ups | `/crm/followups` | Everything due, overdue or done, with the outcome recorded on completion |
 | Users | `/crm/settings/users` | Admins create accounts, change roles, reset a forgotten password, deactivate people |
 
+The interface is in Arabic (right to left) by default, with English one click
+away in the header or on the sign-in page; each browser remembers its choice.
+
 Rules the system enforces for you:
 
 - **One contact per phone number and email.** Egyptian numbers are stored in

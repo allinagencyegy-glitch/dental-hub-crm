@@ -198,7 +198,7 @@ export function DashboardHome({
             </button>
           </div>
         ) : null}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="ms-auto flex flex-wrap items-center gap-2">
           {canFilterOwner ? (
             <label className="flex items-center gap-1.5">
               <span className="text-[10px] font-semibold text-[#7b8790]">Owner</span>
@@ -347,7 +347,7 @@ export function DashboardHome({
                       style={{ width: `${count === 0 && value === 0 ? 0 : Math.max(share, 2)}%` }}
                     />
                   </div>
-                  <span className="w-[90px] shrink-0 text-right text-[10px] font-semibold text-[#35434c]">
+                  <span className="w-[90px] shrink-0 text-end text-[10px] font-semibold text-[#35434c]">
                     {count} · {formatEgp(value)}
                   </span>
                 </div>
@@ -380,7 +380,7 @@ export function DashboardHome({
                       style={{ width: `${step.count === 0 ? 0 : Math.max(share, 2)}%` }}
                     />
                   </div>
-                  <span className="w-[80px] shrink-0 text-right text-[10px] font-semibold text-[#35434c]">
+                  <span className="w-[80px] shrink-0 text-end text-[10px] font-semibold text-[#35434c]">
                     {formatCount(step.count)} · {share}%
                   </span>
                 </div>
@@ -412,20 +412,20 @@ export function DashboardHome({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left">
+            <table className="w-full min-w-[900px] text-start">
               <thead className="border-b border-[#e5eaec] bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
                 <tr>
                   <th className="px-5 py-3">Sales person</th>
-                  <th className="px-3 py-3 text-right">Active leads</th>
-                  <th className="px-3 py-3 text-right">New leads</th>
-                  <th className="px-3 py-3 text-right">Open opps</th>
-                  <th className="px-3 py-3 text-right">Pipeline</th>
-                  <th className="px-3 py-3 text-right">Overdue</th>
-                  <th className="px-3 py-3 text-right">Completed</th>
-                  <th className="px-3 py-3 text-right">Quotes sent</th>
-                  <th className="px-3 py-3 text-right">Wins</th>
-                  <th className="px-3 py-3 text-right">Won value</th>
-                  <th className="px-3 py-3 text-right">Losses</th>
+                  <th className="px-3 py-3 text-end">Active leads</th>
+                  <th className="px-3 py-3 text-end">New leads</th>
+                  <th className="px-3 py-3 text-end">Open opps</th>
+                  <th className="px-3 py-3 text-end">Pipeline</th>
+                  <th className="px-3 py-3 text-end">Overdue</th>
+                  <th className="px-3 py-3 text-end">Completed</th>
+                  <th className="px-3 py-3 text-end">Quotes sent</th>
+                  <th className="px-3 py-3 text-end">Wins</th>
+                  <th className="px-3 py-3 text-end">Won value</th>
+                  <th className="px-3 py-3 text-end">Losses</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf0f1]">
@@ -634,7 +634,7 @@ function KpiCard({
 
 function Cell({ value, warning = false }: { value: string; warning?: boolean }) {
   return (
-    <td className={`px-3 py-3 text-right text-[10px] font-semibold ${warning ? 'text-[#bd454b]' : 'text-[#35434c]'}`}>
+    <td className={`px-3 py-3 text-end text-[10px] font-semibold ${warning ? 'text-[#bd454b]' : 'text-[#35434c]'}`}>
       {value}
     </td>
   );

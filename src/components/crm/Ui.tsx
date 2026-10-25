@@ -75,13 +75,13 @@ export function Toolbar({ placeholder, children, searchValue = '', onSearchChang
             onSearchSubmit?.();
           }}
         >
-          <CrmIcon name="search" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e99a1]" />
+          <CrmIcon name="search" className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e99a1]" />
           <input
             aria-label={placeholder}
             placeholder={placeholder}
             value={searchValue}
             onChange={(event) => onSearchChange(event.target.value)}
-            className="h-9 w-full rounded-lg border border-[#dfe4e7] bg-[#f8fafb] pl-9 pr-3 text-[11px] outline-none focus:border-[#19ad9d] focus:bg-white"
+            className="h-9 w-full rounded-lg border border-[#dfe4e7] bg-[#f8fafb] ps-9 pe-3 text-[11px] outline-none focus:border-[#19ad9d] focus:bg-white"
           />
         </form>
       ) : null}

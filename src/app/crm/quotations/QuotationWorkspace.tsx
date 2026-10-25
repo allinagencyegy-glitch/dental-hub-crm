@@ -402,14 +402,14 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
               ) : null}
             </div>
 
-            <table className="w-full text-left">
+            <table className="w-full text-start">
               <thead className="border-b border-[#e5eaec] bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
                 <tr>
                   <th className="px-5 py-3">#</th>
                   <th className="px-3 py-3">Description</th>
-                  <th className="w-[100px] px-3 py-3 text-right">Quantity</th>
-                  <th className="w-[140px] px-3 py-3 text-right">Unit price</th>
-                  <th className="w-[140px] px-3 py-3 text-right">Line total</th>
+                  <th className="w-[100px] px-3 py-3 text-end">Quantity</th>
+                  <th className="w-[140px] px-3 py-3 text-end">Unit price</th>
+                  <th className="w-[140px] px-3 py-3 text-end">Line total</th>
                   {editing ? <th className="w-[60px] px-3 py-3" /> : null}
                 </tr>
               </thead>
@@ -438,10 +438,10 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
                           step="0.01"
                           value={item.quantity}
                           onChange={(event) => setItem(item.key, { quantity: event.target.value })}
-                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-right text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
                         />
                       ) : (
-                        <span className="block text-right text-[11px] text-[#33414a]">{item.quantity}</span>
+                        <span className="block text-end text-[11px] text-[#33414a]">{item.quantity}</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -452,21 +452,21 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
                           step="0.01"
                           value={item.unitPrice}
                           onChange={(event) => setItem(item.key, { unitPrice: event.target.value })}
-                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-right text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
                         />
                       ) : (
-                        <span className="block text-right text-[11px] text-[#33414a]">
+                        <span className="block text-end text-[11px] text-[#33414a]">
                           {Number(item.unitPrice).toLocaleString('en-EG', { maximumFractionDigits: 2 })}
                         </span>
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="block text-right text-[11px] font-semibold text-[#2c3a43]">
+                      <span className="block text-end text-[11px] font-semibold text-[#2c3a43]">
                         {lineTotal(item)}
                       </span>
                     </td>
                     {editing ? (
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-3 py-3 text-end">
                         <button
                           type="button"
                           onClick={() => removeItem(item.key)}
@@ -621,7 +621,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
                         {snapshot.changeReason}
                         {snapshot.changedByName ? ` · by ${snapshot.changedByName}` : null}
                       </span>
-                      <span className="ml-auto text-[9px] text-[#929da4]">
+                      <span className="ms-auto text-[9px] text-[#929da4]">
                         {snapshot.changedAt.toLocaleDateString()}{' '}
                         {snapshot.changedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>

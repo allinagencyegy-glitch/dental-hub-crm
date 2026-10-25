@@ -22,6 +22,7 @@ Stack: Next.js 16 App Router, TypeScript strict, PostgreSQL through `pg` with ha
 8. Never run `npm run db:migrate`, `db:seed` or `db:seed:acceptance` against `DATABASE_URL` from a feature branch. The test suites create and drop their own databases.
 9. No new dependency unless the task asks for one.
 10. One task per branch, one PR per task. Do not touch files outside the task's scope.
+11. The interface is Arabic (default, right to left) and English. Text a user sees goes in `src/i18n/messages/en.ts` and `ar.ts`, never inline: Server Components and Server Actions read it with `getMessages()` from `src/i18n/server.ts`, Client Components with `useMessages()` from `src/i18n/I18nProvider.tsx`. Use logical classes (`ms-`, `pe-`, `start-`, `text-end`), never `ml-`, `pr-`, `left-`, `text-right`.
 
 Definition of done: run all three and paste the summary lines in the PR description.
 - `npm run lint` → 0 errors

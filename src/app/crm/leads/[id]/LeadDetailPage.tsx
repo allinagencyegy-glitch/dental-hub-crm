@@ -332,7 +332,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
         </div>
         {canMutate && (
           <div>
-            <p className="mb-1.5 text-right text-[9px] font-medium text-[#8a959d]">Lead actions</p>
+            <p className="mb-1.5 text-end text-[9px] font-medium text-[#8a959d]">Lead actions</p>
             <div className="flex flex-wrap justify-end gap-2">
               <Link
                 href={`/crm/leads/${lead.id}/edit`}

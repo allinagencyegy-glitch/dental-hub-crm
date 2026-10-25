@@ -3,12 +3,14 @@
 import { useActionState } from 'react';
 import { loginAction } from '@/server/auth/actions';
 import { EMPTY_LOGIN_STATE } from '@/server/auth/form-state';
+import { useMessages } from '@/i18n/I18nProvider';
 
 const FIELD_CLASS =
   'w-full rounded-md border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-teal-400/60';
 
 export function LoginForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState(loginAction, EMPTY_LOGIN_STATE);
+  const m = useMessages();
 
   return (
     <form action={formAction} className="space-y-4 rounded-lg border border-white/10 bg-slate-900/50 p-6">
@@ -16,12 +18,13 @@ export function LoginForm({ next }: { next: string }) {
 
       <div className="space-y-1.5">
         <label htmlFor="email" className="block text-xs font-medium text-slate-400">
-          Email
+          {m.login.email}
         </label>
         <input
           id="email"
           name="email"
           type="email"
+          dir="ltr"
           autoComplete="username"
           required
           className={FIELD_CLASS}
@@ -30,7 +33,7 @@ export function LoginForm({ next }: { next: string }) {
 
       <div className="space-y-1.5">
         <label htmlFor="password" className="block text-xs font-medium text-slate-400">
-          Password
+          {m.login.password}
         </label>
         <input
           id="password"
@@ -53,7 +56,7 @@ export function LoginForm({ next }: { next: string }) {
         disabled={pending}
         className="w-full rounded-md bg-teal-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-400 disabled:opacity-60"
       >
-        {pending ? 'Signing in...' : 'Sign in'}
+        {pending ? m.login.signingIn : m.login.signIn}
       </button>
     </form>
   );
