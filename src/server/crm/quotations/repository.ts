@@ -5,8 +5,11 @@
  *   * only a DRAFT may be edited, and every edit snapshots the outgoing state
  *     into crm_quotation_revision first;
  *   * a SENT / ACCEPTED / REJECTED / EXPIRED row is immutable - the only way
- *     past it is a revision, which is a NEW row chained through
- *     previous_quote_id (version = parent version + 1, new quote number);
+ *     past a SENT / REJECTED / EXPIRED one is a revision, which is a NEW row
+ *     chained through previous_quote_id (version = parent version + 1, new
+ *     quote number); an ACCEPTED one is final;
+ *   * an opportunity holds at most one ACCEPTED quotation, and once the
+ *     opportunity is WON or LOST its quotations are frozen;
  *   * nothing here ever deletes a quotation.
  *
  * Row scope: SALES_REP sees only quotations whose opportunity they own. A row
@@ -63,8 +66,21 @@ export class QuotationRevisionNotAllowedError extends Error {
 
 export class ClosedOpportunityError extends Error {
   constructor() {
-    super('This opportunity is closed, so no new quotation can be created.');
+    super('This opportunity is closed, so its quotations can no longer be created or changed.');
     this.name = 'ClosedOpportunityError';
+  }
+}
+
+export class QuotationAlreadyAcceptedError extends Error {
+  readonly acceptedQuoteNumber: string;
+
+  constructor(acceptedQuoteNumber: string) {
+    super(
+      `Quotation ${acceptedQuoteNumber} is already accepted on this opportunity. ` +
+        'An opportunity can have only one accepted quotation.',
+    );
+    this.name = 'QuotationAlreadyAcceptedError';
+    this.acceptedQuoteNumber = acceptedQuoteNumber;
   }
 }
 
@@ -699,6 +715,7 @@ export async function updateDraftQuotation(
   const client = transaction.client;
   try {
     const current = await lockQuotationRow(client, quotationId, actor);
+    await lockOpenOpportunity(client, current.opportunityId);
     if (current.status !== 'DRAFT') throw new QuotationNotDraftError(current.status);
 
     const discount = input.discountAmount ?? 0;
@@ -767,11 +784,29 @@ export async function transitionQuotation(
   const client = transaction.client;
   try {
     const current = await lockQuotationRow(client, quotationId, actor);
+    await lockOpenOpportunity(client, current.opportunityId);
     if (!canTransition(current.status, to)) {
       throw new InvalidQuotationTransitionError(current.status, to);
     }
     // A DRAFT is never a legal target, so every remaining branch has an event.
     if (to === 'DRAFT') throw new InvalidQuotationTransitionError(current.status, to);
+
+    // One accepted quotation per opportunity. The opportunity row is locked
+    // above, so two acceptances on the same deal run one after the other and
+    // the second one sees the first; the partial unique index from migration
+    // 0011 is the database's own backstop.
+    if (to === 'ACCEPTED') {
+      const { rows: accepted } = await client.query<{ quote_number: string }>(
+        `SELECT quote_number
+           FROM crm_quotation
+          WHERE opportunity_id = $1
+            AND status = 'ACCEPTED'
+            AND id <> $2
+          LIMIT 1`,
+        [current.opportunityId, current.id],
+      );
+      if (accepted[0]) throw new QuotationAlreadyAcceptedError(accepted[0].quote_number);
+    }
 
     const { rows } = await client.query<QuotationRow>(
       `UPDATE crm_quotation
@@ -822,9 +857,10 @@ export async function transitionQuotation(
 }
 
 /**
- * Supersedes a committed quotation with a new DRAFT: version + 1, a new quote
- * number, chained through previous_quote_id. The original row is untouched -
- * the sent/accepted/rejected commercial truth stays exactly as it was.
+ * Supersedes a sent, rejected or expired quotation with a new DRAFT: version
+ * + 1, a new quote number, chained through previous_quote_id. The original row
+ * is untouched - the sent/rejected commercial truth stays exactly as it was.
+ * An ACCEPTED quotation is final and cannot be revised (see isRevisionAllowed).
  */
 export async function createRevision(
   db: Db,
@@ -835,6 +871,7 @@ export async function createRevision(
   const client = transaction.client;
   try {
     const parent = await lockQuotationRow(client, quotationId, actor);
+    await lockOpenOpportunity(client, parent.opportunityId);
     if (!isRevisionAllowed(parent.status)) {
       throw new QuotationRevisionNotAllowedError(parent.status);
     }
@@ -929,4 +966,21 @@ async function lockQuotationRow(db: Db, quotationId: string, actor: Actor): Prom
 
   if (!rows[0]) throw new QuotationNotFoundError(quotationId);
   return toQuotation(rows[0]);
+}
+
+/**
+ * Locks the parent opportunity for the rest of the transaction and refuses a
+ * closed one. Every quotation write after creation goes through here, so a
+ * WON or LOST deal's quotations are frozen exactly like its stage is.
+ *
+ * Lock order is always quotation row first (lockQuotationRow), then the
+ * opportunity, so two quotation writes cannot deadlock on each other.
+ */
+async function lockOpenOpportunity(db: Db, opportunityId: string): Promise<void> {
+  const { rows } = await db.query<{ stage: string }>(
+    `SELECT stage FROM crm_opportunity WHERE id = $1 FOR UPDATE`,
+    [opportunityId],
+  );
+  const stage = rows[0]?.stage;
+  if (stage === 'WON' || stage === 'LOST') throw new ClosedOpportunityError();
 }

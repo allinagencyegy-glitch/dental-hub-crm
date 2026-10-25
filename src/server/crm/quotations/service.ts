@@ -22,6 +22,7 @@ import {
   InvalidQuotationAmountsError,
   InvalidQuotationItemsError,
   InvalidQuotationTransitionError,
+  QuotationAlreadyAcceptedError,
   QuotationNotDraftError,
   QuotationNotFoundError,
   QuotationRevisionNotAllowedError,
@@ -46,6 +47,7 @@ type FailureCode =
   | 'CLOSED_OPPORTUNITY'
   | 'INVALID_TRANSITION'
   | 'NOT_DRAFT'
+  | 'ALREADY_ACCEPTED'
   | 'INTERNAL';
 
 type Failure = { ok: false; error: FailureCode; message: string };
@@ -122,6 +124,9 @@ function mapWriteFailure(error: unknown): Failure {
   }
   if (error instanceof QuotationNotDraftError) {
     return { ok: false, error: 'NOT_DRAFT', message: error.message };
+  }
+  if (error instanceof QuotationAlreadyAcceptedError) {
+    return { ok: false, error: 'ALREADY_ACCEPTED', message: error.message };
   }
   if (error instanceof InvalidQuotationItemsError || error instanceof InvalidQuotationAmountsError) {
     return { ok: false, error: 'VALIDATION', message: error.message };

@@ -584,4 +584,159 @@ describe('quotations (use cases)', () => {
       expect(snapshots[0].changeReason).toBe('Status moved to SENT');
     });
   });
+
+  describe('one accepted quotation per opportunity, and closed deals', () => {
+    let lostReasonId: string;
+
+    beforeAll(async () => {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM crm_outcome_reason WHERE kind = 'lost' AND code = 'no_budget'`,
+      );
+      lostReasonId = rows[0].id;
+    });
+
+    async function sentQuotation(opportunityId: string) {
+      const quotation = await newQuotation(manager, opportunityId);
+      const sent = await transitionQuotationUseCase(manager, quotation.id, 'SENT', client);
+      expect(sent.ok).toBe(true);
+      return quotation;
+    }
+
+    async function stageOf(opportunityId: string): Promise<string> {
+      const { rows } = await client.query<{ stage: string }>(
+        `SELECT stage FROM crm_opportunity WHERE id = $1`,
+        [opportunityId],
+      );
+      return rows[0].stage;
+    }
+
+    async function closeAs(opportunityId: string, outcome: 'WON' | 'LOST') {
+      const path = outcome === 'WON' ? ['NEEDS_ANALYSIS', 'PROPOSAL', 'NEGOTIATION', 'WON'] : ['LOST'];
+      for (const toStage of path) {
+        const moved = await changeOpportunityStageUseCase(
+          manager,
+          opportunityId,
+          { toStage, lostReasonId: toStage === 'LOST' ? lostReasonId : null },
+          client,
+        );
+        expect(moved.ok).toBe(true);
+      }
+    }
+
+    it('refuses a second acceptance on the same opportunity and names the accepted quotation', async () => {
+      const opportunity = await newOpportunity();
+      const first = await sentQuotation(opportunity.id);
+      const second = await sentQuotation(opportunity.id);
+
+      const accepted = await transitionQuotationUseCase(manager, first.id, 'ACCEPTED', client);
+      expect(accepted.ok).toBe(true);
+
+      const refused = await transitionQuotationUseCase(manager, second.id, 'ACCEPTED', client);
+      assertFailure(refused, 'ALREADY_ACCEPTED');
+      if (!refused.ok) expect(refused.message).toContain(first.quoteNumber);
+
+      expect((await getQuotationUseCase(manager, second.id, client))!.status).toBe('SENT');
+      // The other quotation can still be closed out as rejected.
+      const rejected = await transitionQuotationUseCase(manager, second.id, 'REJECTED', client);
+      expect(rejected.ok).toBe(true);
+    });
+
+    it('leaves the opportunity stage unchanged when a quotation is accepted', async () => {
+      const opportunity = await newOpportunity();
+      const quotation = await sentQuotation(opportunity.id);
+      const before = await stageOf(opportunity.id);
+
+      const accepted = await transitionQuotationUseCase(manager, quotation.id, 'ACCEPTED', client);
+      expect(accepted.ok).toBe(true);
+      expect(await stageOf(opportunity.id)).toBe(before);
+    });
+
+    it('refuses to revise an accepted quotation, and still revises an expired one', async () => {
+      const opportunity = await newOpportunity();
+      const accepted = await sentQuotation(opportunity.id);
+      await transitionQuotationUseCase(manager, accepted.id, 'ACCEPTED', client);
+      assertFailure(await reviseQuotationUseCase(manager, accepted.id, client), 'INVALID_TRANSITION');
+
+      const expired = await sentQuotation(opportunity.id);
+      await transitionQuotationUseCase(manager, expired.id, 'EXPIRED', client);
+      const revised = await reviseQuotationUseCase(manager, expired.id, client);
+      expect(revised.ok).toBe(true);
+    });
+
+    for (const outcome of ['WON', 'LOST'] as const) {
+      it(`freezes every quotation write once the opportunity is ${outcome}`, async () => {
+        const opportunity = await newOpportunity();
+        const draft = await newQuotation(manager, opportunity.id);
+        const sent = await sentQuotation(opportunity.id);
+        await closeAs(opportunity.id, outcome);
+
+        assertFailure(
+          await updateDraftQuotationUseCase(
+            manager,
+            draft.id,
+            { items: [{ description: 'Late edit', quantity: 1, unitPrice: 1 }] },
+            client,
+          ),
+          'CLOSED_OPPORTUNITY',
+        );
+        assertFailure(await transitionQuotationUseCase(manager, draft.id, 'SENT', client), 'CLOSED_OPPORTUNITY');
+        assertFailure(await transitionQuotationUseCase(manager, sent.id, 'ACCEPTED', client), 'CLOSED_OPPORTUNITY');
+        assertFailure(await reviseQuotationUseCase(manager, sent.id, client), 'CLOSED_OPPORTUNITY');
+
+        expect((await getQuotationUseCase(manager, draft.id, client))!.status).toBe('DRAFT');
+        expect((await getQuotationUseCase(manager, sent.id, client))!.status).toBe('SENT');
+      });
+    }
+
+    it('lets exactly one of two concurrent acceptances on one opportunity win', async () => {
+      const opportunity = await newOpportunity();
+      const first = await sentQuotation(opportunity.id);
+      const second = await sentQuotation(opportunity.id);
+
+      const clientA = new Client({ connectionString: database.url });
+      const clientB = new Client({ connectionString: database.url });
+      await clientA.connect();
+      await clientB.connect();
+      try {
+        const results = await Promise.all([
+          transitionQuotationUseCase(manager, first.id, 'ACCEPTED', clientA),
+          transitionQuotationUseCase(manager, second.id, 'ACCEPTED', clientB),
+        ]);
+        expect(results.filter((result) => result.ok)).toHaveLength(1);
+        assertFailure(results.find((result) => !result.ok)!, 'ALREADY_ACCEPTED');
+      } finally {
+        await clientA.end();
+        await clientB.end();
+      }
+
+      const { rows } = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count
+           FROM crm_quotation
+          WHERE opportunity_id = $1 AND status = 'ACCEPTED'`,
+        [opportunity.id],
+      );
+      expect(rows[0].count).toBe('1');
+    });
+
+    it('lets the database itself refuse a second ACCEPTED row', async () => {
+      const opportunity = await newOpportunity();
+      const accepted = await sentQuotation(opportunity.id);
+      await transitionQuotationUseCase(manager, accepted.id, 'ACCEPTED', client);
+
+      const error = await client
+        .query(
+          `INSERT INTO crm_quotation
+             (opportunity_id, contact_id, quote_number, status, sent_at, accepted_at, created_by)
+           VALUES ($1, $2, $3, 'ACCEPTED', now(), now(), $4)`,
+          [opportunity.id, contactId, uniqueToken('Q'), managerId],
+        )
+        .then(
+          () => null,
+          (err: unknown) => err as { code?: string; constraint?: string },
+        );
+      expect(error).not.toBeNull();
+      expect(error!.code).toBe('23505');
+      expect(error!.constraint).toBe('crm_quotation_one_accepted_per_opportunity');
+    });
+  });
 });
