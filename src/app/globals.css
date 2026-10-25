@@ -17,3 +17,14 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* IBM Plex Sans Arabic carries Latin letters too, so names and numbers match. */
+html[lang="ar"] body {
+  font-family: var(--font-arabic), system-ui, sans-serif;
+}
+
+/* Letter spacing pulls joined Arabic letters apart, and Arabic has no capitals. */
+html[lang="ar"] body * {
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}

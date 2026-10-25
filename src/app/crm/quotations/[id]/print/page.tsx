@@ -53,7 +53,7 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
               </p>
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <p className="text-[19px] font-semibold tracking-[-0.03em] text-[#17242d]">
               {quotation.quoteNumber}
             </p>
@@ -79,8 +79,8 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
               <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactEmail}</p>
             ) : null}
           </div>
-          <div className="sm:text-right">
-            <div className="sm:inline-block sm:text-left">
+          <div className="sm:text-end">
+            <div className="sm:inline-block sm:text-start">
               <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">Quotation date</p>
               <p className="mt-2 text-[11px] font-medium text-[#33414a]">
                 {quotation.createdAt.toLocaleDateString()}
@@ -101,14 +101,14 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
 
         {/* Line items. */}
         <section className="overflow-hidden rounded-lg ring-1 ring-[#dfe5e8]">
-          <table className="w-full text-left">
+          <table className="w-full text-start">
             <thead className="bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
               <tr>
                 <th className="px-4 py-3">#</th>
                 <th className="px-3 py-3">Description</th>
-                <th className="w-[90px] px-3 py-3 text-right">Quantity</th>
-                <th className="w-[130px] px-3 py-3 text-right">Unit price</th>
-                <th className="w-[130px] px-4 py-3 text-right">Total</th>
+                <th className="w-[90px] px-3 py-3 text-end">Quantity</th>
+                <th className="w-[130px] px-3 py-3 text-end">Unit price</th>
+                <th className="w-[130px] px-4 py-3 text-end">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf0f1]">
@@ -116,11 +116,11 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
                 <tr key={item.id}>
                   <td className="px-4 py-3 text-[10px] font-semibold text-[#9aa3aa]">{item.sequence}</td>
                   <td className="px-3 py-3 text-[11px] font-medium text-[#33414a]">{item.description}</td>
-                  <td className="px-3 py-3 text-right text-[11px] text-[#33414a]">{item.quantity}</td>
-                  <td className="px-3 py-3 text-right text-[11px] text-[#33414a]">
+                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">{item.quantity}</td>
+                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">
                     {item.unitPrice.toLocaleString('en-EG', { maximumFractionDigits: 2 })}
                   </td>
-                  <td className="px-4 py-3 text-right text-[11px] font-semibold text-[#2c3a43]">
+                  <td className="px-4 py-3 text-end text-[11px] font-semibold text-[#2c3a43]">
                     {formatEgp(item.lineTotal)}
                   </td>
                 </tr>

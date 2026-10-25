@@ -204,7 +204,7 @@ export function OpportunitiesList({
         </Toolbar>
 
         <div className="overflow-x-auto border-x border-b border-[#dfe5e8] bg-white">
-          <table className="w-full min-w-[920px] text-left">
+          <table className="w-full min-w-[920px] text-start">
             <thead className="border-b border-[#e5eaec] bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
               <tr>
                 <th className="px-4 py-3">Reference</th>
@@ -213,7 +213,7 @@ export function OpportunitiesList({
                 <th className="px-3 py-3">Owner</th>
                 <th className="px-3 py-3">Next action</th>
                 <th className="px-3 py-3">Due</th>
-                <th className="px-3 py-3 text-right">Value</th>
+                <th className="px-3 py-3 text-end">Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf0f1]">
@@ -226,7 +226,7 @@ export function OpportunitiesList({
                         <button
                           type="button"
                           onClick={handleSearchClear}
-                          className="ml-2 font-semibold text-[#118e82] hover:underline"
+                          className="ms-2 font-semibold text-[#118e82] hover:underline"
                         >
                           Clear search
                         </button>
@@ -346,7 +346,7 @@ export function OpportunitiesList({
                       )}
                     </td>
 
-                    <td className="px-3 py-3.5 text-right">
+                    <td className="px-3 py-3.5 text-end">
                       <span className="whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
                         {opportunity.estimatedValue === null
                           ? '—'

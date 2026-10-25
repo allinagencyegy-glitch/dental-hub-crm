@@ -12,10 +12,22 @@ export interface HttpResponse {
   headers: Headers;
 }
 
+/** The interface language cookie, see src/i18n/config.ts. */
+export const LOCALE_COOKIE = 'dental_hub_locale';
+
 export class HttpClient {
   private readonly jar = new Map<string, string>();
 
-  constructor(private readonly baseUrl: string) {}
+  /**
+   * Browses in English unless told otherwise, so assertions on page text stay
+   * readable; `null` sends no language cookie, as a first visit does.
+   */
+  constructor(
+    private readonly baseUrl: string,
+    locale: 'ar' | 'en' | null = 'en',
+  ) {
+    if (locale) this.jar.set(LOCALE_COOKIE, locale);
+  }
 
   cookie(name: string): string | undefined {
     return this.jar.get(name);

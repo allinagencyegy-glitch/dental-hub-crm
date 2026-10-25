@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
 import { CrmIcon } from '@/components/crm/CrmIcon';
+import { useMessages } from '@/i18n/I18nProvider';
 import { SidebarNav } from './SidebarNav';
 import { BrandBlock, UserCard } from './SidebarChrome';
 import type { NavItem } from './navigation';
@@ -35,6 +36,7 @@ export function MobileNav({
   displayName: string;
   roleLabel: string;
 }) {
+  const m = useMessages();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
@@ -137,7 +139,7 @@ export function MobileNav({
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-label={open ? m.nav.closeMenu : m.nav.openMenu}
         aria-expanded={open}
         aria-controls={DRAWER_ID}
         className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#dbe2e5] bg-white text-[#53616b] transition hover:bg-[#f7f9fa] lg:hidden print:hidden"
@@ -158,17 +160,17 @@ export function MobileNav({
                 id={DRAWER_ID}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Navigation"
+                aria-label={m.nav.navigation}
                 tabIndex={-1}
-                className="absolute inset-y-0 left-0 flex w-[288px] max-w-[85vw] flex-col bg-[#101c24] text-white shadow-[0_18px_60px_rgba(0,0,0,0.45)] outline-none"
+                className="absolute inset-y-0 start-0 flex w-[288px] max-w-[85vw] flex-col bg-[#101c24] text-white shadow-[0_18px_60px_rgba(0,0,0,0.45)] outline-none"
               >
                 <div className="relative">
                   <BrandBlock />
                   <button
                     type="button"
                     onClick={close}
-                    aria-label="Close navigation menu"
-                    className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/[0.08] hover:text-white"
+                    aria-label={m.nav.closeMenu}
+                    className="absolute end-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/[0.08] hover:text-white"
                   >
                     <CrmIcon name="x" className="h-[18px] w-[18px]" />
                   </button>
@@ -176,15 +178,15 @@ export function MobileNav({
 
                 <div className="flex-1 overflow-y-auto px-4 pt-6">
                   <SidebarNav
-                    title="Workspace"
+                    title={m.nav.workspace}
                     items={primaryNav}
-                    ariaLabel="CRM navigation"
+                    ariaLabel={m.nav.crmNavigation}
                     onNavigate={close}
                   />
                   <SidebarNav
-                    title="Settings"
+                    title={m.nav.settings}
                     items={settingsNav}
-                    ariaLabel="CRM settings navigation"
+                    ariaLabel={m.nav.settingsNavigation}
                     onNavigate={close}
                   />
                 </div>

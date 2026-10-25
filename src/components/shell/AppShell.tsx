@@ -1,11 +1,15 @@
-import { ROLE_LABELS, can } from '@/server/authz/permissions';
+import { can } from '@/server/authz/permissions';
 import type { PublicUser } from '@/server/users/dto';
+import { getMessages } from '@/i18n/server';
 import { PRIMARY_NAV, SETTINGS_NAV } from './navigation';
 import { SidebarNav } from './SidebarNav';
 import { MobileNav } from './MobileNav';
 import { BrandBlock, UserCard } from './SidebarChrome';
+import { LanguageSwitch } from './LanguageSwitch';
 
-export function AppShell({ user, children }: { user: PublicUser; children: React.ReactNode }) {
+export async function AppShell({ user, children }: { user: PublicUser; children: React.ReactNode }) {
+  const m = await getMessages();
+  const roleLabel = m.roles[user.role];
   // Only nav entries the signed-in role may actually reach are rendered.
   const primaryNav = PRIMARY_NAV.filter(
     (item) => !item.permission || can(user.role, item.permission),
@@ -23,11 +27,11 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
         <BrandBlock />
 
         <div className="px-4 pt-6">
-          <SidebarNav title="Workspace" items={primaryNav} ariaLabel="CRM navigation" />
-          <SidebarNav title="Settings" items={settingsNav} ariaLabel="CRM settings navigation" />
+          <SidebarNav title={m.nav.workspace} items={primaryNav} ariaLabel={m.nav.crmNavigation} />
+          <SidebarNav title={m.nav.settings} items={settingsNav} ariaLabel={m.nav.settingsNavigation} />
         </div>
 
-        <UserCard displayName={user.displayName} roleLabel={ROLE_LABELS[user.role]} />
+        <UserCard displayName={user.displayName} roleLabel={roleLabel} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col print:block">
@@ -38,12 +42,13 @@ export function AppShell({ user, children }: { user: PublicUser; children: React
             primaryNav={primaryNav}
             settingsNav={settingsNav}
             displayName={user.displayName}
-            roleLabel={ROLE_LABELS[user.role]}
+            roleLabel={roleLabel}
           />
-          <div className="ml-auto flex items-center gap-2.5">
-            <div className="hidden text-right sm:block">
+          <div className="ms-auto flex items-center gap-4">
+            <LanguageSwitch className="h-8 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]" />
+            <div className="hidden text-end sm:block">
               <p className="text-xs font-semibold text-[#26323b]">{user.displayName}</p>
-              <p className="mt-0.5 text-[10px] text-[#8b969e]">{ROLE_LABELS[user.role]}</p>
+              <p className="mt-0.5 text-[10px] text-[#8b969e]">{roleLabel}</p>
             </div>
           </div>
         </header>

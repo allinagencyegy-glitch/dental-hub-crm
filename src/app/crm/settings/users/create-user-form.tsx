@@ -2,8 +2,9 @@
 
 import { useActionState } from 'react';
 import { createUserAction } from '@/server/users/admin-actions';
-import { EMPTY_ADMIN_STATE } from '@/server/auth/form-state';
-import { ROLES, ROLE_LABELS } from '@/server/authz/permissions';
+import { EMPTY_ADMIN_STATE, MIN_PASSWORD_LENGTH } from '@/server/auth/form-state';
+import { ROLES } from '@/server/authz/permissions';
+import { useMessages } from '@/i18n/I18nProvider';
 
 const LABEL_CLASS = 'block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d]';
 const FIELD_CLASS =
@@ -11,50 +12,51 @@ const FIELD_CLASS =
 
 export function CreateUserForm() {
   const [state, formAction, pending] = useActionState(createUserAction, EMPTY_ADMIN_STATE);
+  const m = useMessages();
 
   return (
     <form action={formAction} className="rounded-xl border border-[#dfe5e8] bg-white p-5">
-      <h2 className="text-sm font-semibold text-[#1c2831]">Add a user</h2>
+      <h2 className="text-sm font-semibold text-[#1c2831]">{m.users.addTitle}</h2>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <label htmlFor="displayName" className={LABEL_CLASS}>
-            Display name
+            {m.users.displayName}
           </label>
           <input id="displayName" name="displayName" required maxLength={120} className={FIELD_CLASS} />
         </div>
 
         <div className="space-y-1.5">
           <label htmlFor="new-email" className={LABEL_CLASS}>
-            Email
+            {m.users.email}
           </label>
-          <input id="new-email" name="email" type="email" required className={FIELD_CLASS} />
+          <input id="new-email" name="email" type="email" dir="ltr" required className={FIELD_CLASS} />
         </div>
 
         <div className="space-y-1.5">
           <label htmlFor="new-password" className={LABEL_CLASS}>
-            Initial password
+            {m.users.initialPassword}
           </label>
           <input
             id="new-password"
             name="password"
             type="password"
             required
-            minLength={12}
+            minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
             className={FIELD_CLASS}
           />
-          <p className="text-[10px] text-[#8a959d]">Minimum 12 characters.</p>
+          <p className="text-[10px] text-[#8a959d]">{m.common.minCharacters(MIN_PASSWORD_LENGTH)}</p>
         </div>
 
         <div className="space-y-1.5">
           <label htmlFor="new-role" className={LABEL_CLASS}>
-            Role
+            {m.users.role}
           </label>
           <select id="new-role" name="role" defaultValue="SALES_REP" className={FIELD_CLASS}>
             {ROLES.map((role) => (
               <option key={role} value={role}>
-                {ROLE_LABELS[role]}
+                {m.roles[role]}
               </option>
             ))}
           </select>
@@ -77,7 +79,7 @@ export function CreateUserForm() {
         disabled={pending}
         className="mt-4 inline-flex h-9 items-center rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
       >
-        {pending ? 'Creating...' : 'Create user'}
+        {pending ? m.users.creating : m.users.create}
       </button>
     </form>
   );

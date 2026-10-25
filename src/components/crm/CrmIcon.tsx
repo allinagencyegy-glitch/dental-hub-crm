@@ -9,7 +9,10 @@ export type CrmIconName =
   | 'sparkles' | 'pause' | 'target' | 'external' | 'activity' | 'x'
   | 'archive' | 'edit' | 'unarchive' | 'opportunities' | 'menu';
 
-export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVGSVGElement>) {
+/** Icons that point along the reading direction, mirrored in right-to-left pages. */
+const DIRECTIONAL: ReadonlySet<CrmIconName> = new Set(['arrow']);
+
+export function CrmIcon({ name, className, ...props }: { name: CrmIconName } & SVGProps<SVGSVGElement>) {
   const paths: Record<CrmIconName, React.ReactNode> = {
     home: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5M9 21v-7h6v7"/></>,
     leads: <><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5M8 17h3"/></>,
@@ -48,7 +51,7 @@ export function CrmIcon({ name, ...props }: { name: CrmIconName } & SVGProps<SVG
   };
 
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={DIRECTIONAL.has(name) ? `${className ?? ''} rtl:-scale-x-100` : className} {...props}>
       {paths[name]}
     </svg>
   );

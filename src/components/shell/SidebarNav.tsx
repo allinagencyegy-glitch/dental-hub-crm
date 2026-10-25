@@ -2,23 +2,23 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { NavItem } from './navigation';
+import type { NavItem, NavKey } from './navigation';
 import { isNavItemActive } from './nav-active';
-import { CrmIcon } from '@/components/crm/CrmIcon';
+import { CrmIcon, type CrmIconName } from '@/components/crm/CrmIcon';
+import { useMessages } from '@/i18n/I18nProvider';
 
-const navIcons: Record<string, 'home' | 'leads' | 'customers' | 'pipeline' | 'opportunities' | 'followups' | 'quotation' | 'reports' | 'team' | 'settings'> = {
-  Home: 'home',
-  Leads: 'leads',
-  Customers: 'customers',
-  Pipeline: 'pipeline',
-  Opportunities: 'opportunities',
-  'Follow-ups': 'followups',
-  Quotations: 'quotation',
-  Reports: 'reports',
-  Team: 'team',
-  Settings: 'settings',
-  Users: 'settings',
-  Password: 'settings',
+const navIcons: Record<NavKey, CrmIconName> = {
+  home: 'home',
+  leads: 'leads',
+  opportunities: 'opportunities',
+  customers: 'customers',
+  followUps: 'followups',
+  pipeline: 'pipeline',
+  quotations: 'quotation',
+  reports: 'reports',
+  team: 'team',
+  users: 'settings',
+  password: 'settings',
 };
 
 function NavLink({
@@ -30,19 +30,21 @@ function NavLink({
   active: boolean;
   onNavigate?: () => void;
 }) {
-  const Icon = navIcons[item.label] || 'home';
+  const m = useMessages();
+  const Icon = navIcons[item.key];
+  const label = m.nav[item.key];
   // Reserved-but-unimplemented destinations render as inert text. No href, so
   // there is nothing to click and no fake page behind it.
   if (item.status !== 'available' || !item.href) {
     return (
       <span
         aria-disabled="true"
-        title="Coming soon"
+        title={m.nav.comingSoon}
         className="flex cursor-not-allowed select-none items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-white/28"
       >
         <CrmIcon name={Icon} className="h-[18px] w-[18px]" />
-        {item.label}
-        <span className="ml-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">Soon</span>
+        {label}
+        <span className="ms-auto rounded bg-white/[0.06] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider">{m.nav.soon}</span>
       </span>
     );
   }
@@ -55,7 +57,7 @@ function NavLink({
       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition ${active ? 'bg-[#18b6a4] text-white shadow-[0_7px_22px_rgba(24,182,164,0.18)]' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
     >
       <CrmIcon name={Icon} className={`h-[18px] w-[18px] ${active ? 'text-white' : 'text-white/42 group-hover:text-white/70'}`} />
-      {item.label}
+      {label}
     </Link>
   );
 }
@@ -82,7 +84,7 @@ export function SidebarNav({
       <nav className="space-y-1" aria-label={ariaLabel ?? title}>
         {items.map((item) => (
           <NavLink
-            key={item.label}
+            key={item.key}
             item={item}
             active={isNavItemActive(pathname, item.href)}
             onNavigate={onNavigate}

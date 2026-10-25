@@ -739,7 +739,7 @@ export function OpportunityDetail({
                           revises {quotation.previousQuoteNumber}
                         </span>
                       ) : null}
-                      <span className="ml-auto whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
+                      <span className="ms-auto whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
                         {quotation.totalAmount.toLocaleString('en-EG', {
                           style: 'currency',
                           currency: 'EGP',
@@ -922,11 +922,11 @@ export function OpportunityDetail({
                             {event.title}
                             {pendingFollowUp ? (
                               overdueFollowUp ? (
-                                <span className="ml-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#bd454b]">
+                                <span className="ms-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#bd454b]">
                                   Overdue
                                 </span>
                               ) : (
-                                <span className="ml-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#16877b]">
+                                <span className="ms-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#16877b]">
                                   Pending
                                 </span>
                               )
@@ -1153,10 +1153,10 @@ export function OpportunityDetail({
             ) : (
               <ol className="mt-4 space-y-3">
                 {stageHistory.map((entry) => (
-                  <li key={entry.id} className="relative pl-4">
+                  <li key={entry.id} className="relative ps-4">
                     <span
                       aria-hidden
-                      className="absolute left-0 top-1.5 h-1.5 w-1.5 rounded-full bg-[#18b6a4]"
+                      className="absolute start-0 top-1.5 h-1.5 w-1.5 rounded-full bg-[#18b6a4]"
                     />
                     <p className="text-[10px] font-semibold text-[#33414a]">
                       {entry.fromStage ? `${STAGE_LABELS[entry.fromStage]} → ` : ''}
