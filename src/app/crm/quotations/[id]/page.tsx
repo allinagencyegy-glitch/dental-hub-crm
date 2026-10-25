@@ -1,4 +1,5 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { notFound } from 'next/navigation';
 import {
   getQuotationAction,
@@ -6,7 +7,10 @@ import {
 } from '@/server/crm/quotations/actions';
 import { QuotationWorkspace } from '../QuotationWorkspace';
 
-export const metadata = { title: 'Quotation | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.quotations.pageTitle) };
+}
 
 interface QuotationPageProps {
   params: Promise<{ id: string }>;

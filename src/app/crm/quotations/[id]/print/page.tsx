@@ -1,22 +1,18 @@
 import Link from 'next/link';
 import { requirePermission } from '@/server/auth/dal';
 import { notFound } from 'next/navigation';
+import { getLocale, getMessages } from '@/i18n/server';
+import { formatters } from '@/i18n/format';
 import { getQuotationAction } from '@/server/crm/quotations/actions';
-import { QUOTATION_STATUS_LABELS } from '@/server/crm/quotations/status';
 import { PrintButton } from './PrintButton';
 
-export const metadata = { title: 'Printable quotation | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.quotations.print.pageTitle) };
+}
 
 interface PrintQuotationPageProps {
   params: Promise<{ id: string }>;
-}
-
-function formatEgp(value: number): string {
-  return value.toLocaleString('en-EG', {
-    style: 'currency',
-    currency: 'EGP',
-    maximumFractionDigits: 2,
-  });
 }
 
 export default async function PrintQuotationPage({ params }: PrintQuotationPageProps) {
@@ -26,6 +22,11 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
   const quotation = await getQuotationAction(id);
   if (!quotation) notFound();
 
+  const m = await getMessages();
+  const f = formatters(await getLocale());
+  const t = m.quotations;
+  const status = m.quotationStatus[quotation.status];
+
   return (
     <div className="print:bg-white">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -33,7 +34,7 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
           href={`/crm/quotations/${quotation.id}`}
           className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dbe2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
         >
-          Back to quotation
+          {t.print.backToQuotation}
         </Link>
         <PrintButton />
       </div>
@@ -47,9 +48,9 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
               <span className="text-lg font-bold tracking-[-0.08em] text-white">DH</span>
             </div>
             <div>
-              <p className="text-[17px] font-semibold tracking-[-0.02em] text-[#101c24]">Dental Hub</p>
+              <p className="text-[17px] font-semibold tracking-[-0.02em] text-[#101c24]">{m.app.brand}</p>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#18a897]">
-                Sales quotation
+                {t.print.documentKind}
               </p>
             </div>
           </div>
@@ -58,8 +59,8 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
               {quotation.quoteNumber}
             </p>
             <p className="mt-1 text-[10px] text-[#6c7a83]">
-              {QUOTATION_STATUS_LABELS[quotation.status]}
-              {quotation.version > 1 ? ` · version ${quotation.version}` : null}
+              {status}
+              {quotation.version > 1 ? t.print.versionSuffix(quotation.version) : null}
             </p>
           </div>
         </header>
@@ -67,32 +68,32 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
         {/* Document facts and customer block. */}
         <section className="grid gap-6 py-6 sm:grid-cols-2">
           <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">Prepared for</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">{t.print.preparedFor}</p>
             <p className="mt-2 text-[13px] font-semibold text-[#202d35]">
               {quotation.accountName ?? quotation.contactName}
             </p>
             <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactName}</p>
             {quotation.contactPhone ? (
-              <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactPhone}</p>
+              <p className="mt-0.5 text-[11px] text-[#46545d]">
+                <span dir="ltr">{quotation.contactPhone}</span>
+              </p>
             ) : null}
             {quotation.contactEmail ? (
-              <p className="mt-0.5 text-[11px] text-[#46545d]">{quotation.contactEmail}</p>
+              <p className="mt-0.5 text-[11px] text-[#46545d]">
+                <span dir="ltr">{quotation.contactEmail}</span>
+              </p>
             ) : null}
           </div>
           <div className="sm:text-end">
             <div className="sm:inline-block sm:text-start">
-              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">Quotation date</p>
-              <p className="mt-2 text-[11px] font-medium text-[#33414a]">
-                {quotation.createdAt.toLocaleDateString()}
-              </p>
+              <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">{t.print.quotationDate}</p>
+              <p className="mt-2 text-[11px] font-medium text-[#33414a]">{f.date(quotation.createdAt)}</p>
               {quotation.validUntil ? (
                 <>
                   <p className="mt-3 text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">
-                    Valid until
+                    {t.validUntil}
                   </p>
-                  <p className="mt-2 text-[11px] font-medium text-[#33414a]">
-                    {quotation.validUntil.toLocaleDateString()}
-                  </p>
+                  <p className="mt-2 text-[11px] font-medium text-[#33414a]">{f.date(quotation.validUntil)}</p>
                 </>
               ) : null}
             </div>
@@ -104,11 +105,11 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
           <table className="w-full text-start">
             <thead className="bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
               <tr>
-                <th className="px-4 py-3">#</th>
-                <th className="px-3 py-3">Description</th>
-                <th className="w-[90px] px-3 py-3 text-end">Quantity</th>
-                <th className="w-[130px] px-3 py-3 text-end">Unit price</th>
-                <th className="w-[130px] px-4 py-3 text-end">Total</th>
+                <th className="px-4 py-3 text-start">{t.columns.number}</th>
+                <th className="px-3 py-3 text-start">{t.columns.description}</th>
+                <th className="w-[90px] px-3 py-3 text-end">{t.columns.quantity}</th>
+                <th className="w-[130px] px-3 py-3 text-end">{t.columns.unitPrice}</th>
+                <th className="w-[130px] px-4 py-3 text-end">{t.columns.total}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf0f1]">
@@ -116,12 +117,10 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
                 <tr key={item.id}>
                   <td className="px-4 py-3 text-[10px] font-semibold text-[#9aa3aa]">{item.sequence}</td>
                   <td className="px-3 py-3 text-[11px] font-medium text-[#33414a]">{item.description}</td>
-                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">{item.quantity}</td>
-                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">
-                    {item.unitPrice.toLocaleString('en-EG', { maximumFractionDigits: 2 })}
-                  </td>
+                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">{f.number(item.quantity)}</td>
+                  <td className="px-3 py-3 text-end text-[11px] text-[#33414a]">{f.number(item.unitPrice)}</td>
                   <td className="px-4 py-3 text-end text-[11px] font-semibold text-[#2c3a43]">
-                    {formatEgp(item.lineTotal)}
+                    {f.currencyExact(item.lineTotal)}
                   </td>
                 </tr>
               ))}
@@ -133,29 +132,29 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
         <section className="mt-6 flex justify-end">
           <div className="w-full max-w-[280px] space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#7b8790]">Subtotal</span>
-              <span className="text-[11px] font-semibold text-[#33414a]">{formatEgp(quotation.subtotal)}</span>
+              <span className="text-[10px] text-[#7b8790]">{t.subtotal}</span>
+              <span className="text-[11px] font-semibold text-[#33414a]">{f.currencyExact(quotation.subtotal)}</span>
             </div>
             {quotation.discountAmount > 0 ? (
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[#7b8790]">Discount</span>
+                <span className="text-[10px] text-[#7b8790]">{t.discount}</span>
                 <span className="text-[11px] font-semibold text-[#b45b1b]">
-                  − {formatEgp(quotation.discountAmount)}
+                  − {f.currencyExact(quotation.discountAmount)}
                 </span>
               </div>
             ) : null}
             {quotation.taxAmount > 0 ? (
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-[#7b8790]">Tax</span>
+                <span className="text-[10px] text-[#7b8790]">{t.tax}</span>
                 <span className="text-[11px] font-semibold text-[#33414a]">
-                  + {formatEgp(quotation.taxAmount)}
+                  + {f.currencyExact(quotation.taxAmount)}
                 </span>
               </div>
             ) : null}
             <div className="flex items-center justify-between border-t-2 border-[#101c24] pt-3">
-              <span className="text-[12px] font-bold text-[#202d35]">Total</span>
+              <span className="text-[12px] font-bold text-[#202d35]">{t.total}</span>
               <span className="text-[18px] font-semibold tracking-[-0.03em] text-[#17242d]">
-                {formatEgp(quotation.totalAmount)}
+                {f.currencyExact(quotation.totalAmount)}
               </span>
             </div>
           </div>
@@ -166,7 +165,7 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
           <section className="mt-8 space-y-4">
             {quotation.notes ? (
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">Notes</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">{t.print.notes}</p>
                 <p className="mt-1.5 whitespace-pre-line text-[11px] leading-5 text-[#46545d]">
                   {quotation.notes}
                 </p>
@@ -175,7 +174,7 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
             {quotation.termsConditions ? (
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#9aa3aa]">
-                  Terms and conditions
+                  {t.terms}
                 </p>
                 <p className="mt-1.5 whitespace-pre-line text-[11px] leading-5 text-[#46545d]">
                   {quotation.termsConditions}
@@ -187,9 +186,12 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
 
         <footer className="mt-10 border-t border-[#e5eaec] pt-4 text-[9px] leading-4 text-[#98a2a9]">
           <p>
-            {quotation.quoteNumber} · {QUOTATION_STATUS_LABELS[quotation.status]}
-            {quotation.sentAt ? ` · sent ${quotation.sentAt.toLocaleDateString()}` : null} · prepared
-            by {quotation.createdByName} · Dental Hub CRM
+            {t.print.footer(
+              quotation.quoteNumber,
+              status,
+              quotation.sentAt ? f.date(quotation.sentAt) : null,
+              quotation.createdByName,
+            )}
           </p>
         </footer>
       </article>

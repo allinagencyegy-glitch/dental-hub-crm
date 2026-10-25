@@ -3,6 +3,8 @@
 import 'server-only';
 import { z } from 'zod';
 import { assertPermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
+import { localise } from './messages';
 import {
   createQuotationUseCase,
   getQuotationUseCase,
@@ -37,11 +39,10 @@ function parseCommercialInput(input: unknown): QuotationCommercialInput | null {
   return parsed.success ? parsed.data : null;
 }
 
-const INVALID_INPUT = {
-  ok: false,
-  error: 'VALIDATION',
-  message: 'The quotation data could not be read.',
-} as const;
+async function invalidInput(): Promise<QuotationResult> {
+  const m = await getMessages();
+  return { ok: false, error: 'VALIDATION', message: m.quotations.errors.unreadable };
+}
 
 /** Creates a DRAFT quotation on an opportunity the actor may see. */
 export async function createQuotationAction(
@@ -52,9 +53,9 @@ export async function createQuotationAction(
   const actor: Actor = { userId: session.user.id, role: session.role };
 
   const commercial = parseCommercialInput(input);
-  if (!commercial) return INVALID_INPUT;
+  if (!commercial) return invalidInput();
 
-  return createQuotationUseCase(actor, opportunityId, commercial);
+  return localise('create', await createQuotationUseCase(actor, opportunityId, commercial), await getMessages());
 }
 
 /** One quotation with its items, or null when missing / out of scope. */
@@ -89,44 +90,48 @@ export async function updateDraftQuotationAction(
   const changeReason = parsed.success ? (parsed.data.changeReason ?? null) : null;
 
   const commercial = parseCommercialInput(input);
-  if (!commercial) return INVALID_INPUT;
+  if (!commercial) return invalidInput();
 
-  return updateDraftQuotationUseCase(actor, quotationId, { ...commercial, changeReason });
+  return localise(
+    'change',
+    await updateDraftQuotationUseCase(actor, quotationId, { ...commercial, changeReason }),
+    await getMessages(),
+  );
 }
 
 /** Sends a DRAFT quotation to the customer. */
 export async function sendQuotationAction(quotationId: string): Promise<QuotationResult> {
   const session = await assertPermission('quotations:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return transitionQuotationUseCase(actor, quotationId, 'SENT');
+  return localise('change', await transitionQuotationUseCase(actor, quotationId, 'SENT'), await getMessages());
 }
 
 /** Records the customer's acceptance of a SENT quotation. */
 export async function acceptQuotationAction(quotationId: string): Promise<QuotationResult> {
   const session = await assertPermission('quotations:close');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return transitionQuotationUseCase(actor, quotationId, 'ACCEPTED');
+  return localise('change', await transitionQuotationUseCase(actor, quotationId, 'ACCEPTED'), await getMessages());
 }
 
 /** Records the customer's rejection of a SENT quotation. */
 export async function rejectQuotationAction(quotationId: string): Promise<QuotationResult> {
   const session = await assertPermission('quotations:close');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return transitionQuotationUseCase(actor, quotationId, 'REJECTED');
+  return localise('change', await transitionQuotationUseCase(actor, quotationId, 'REJECTED'), await getMessages());
 }
 
 /** Marks a DRAFT or SENT quotation as expired. */
 export async function expireQuotationAction(quotationId: string): Promise<QuotationResult> {
   const session = await assertPermission('quotations:close');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return transitionQuotationUseCase(actor, quotationId, 'EXPIRED');
+  return localise('change', await transitionQuotationUseCase(actor, quotationId, 'EXPIRED'), await getMessages());
 }
 
 /** Supersedes a committed quotation with a new DRAFT revision. */
 export async function reviseQuotationAction(quotationId: string): Promise<QuotationResult> {
   const session = await assertPermission('quotations:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return reviseQuotationUseCase(actor, quotationId);
+  return localise('change', await reviseQuotationUseCase(actor, quotationId), await getMessages());
 }
 
 /** The immutable snapshot log of one quotation, newest first. Empty out of scope. */

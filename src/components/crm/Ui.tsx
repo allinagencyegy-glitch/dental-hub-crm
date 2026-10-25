@@ -48,11 +48,12 @@ export function PageHeader({ eyebrow, title, description, actionLabel, actionIco
 }
 
 
-export function SectionTitle({ title, subtitle, href, linkLabel = 'View all' }: { title: string; subtitle?: string; href?: string; linkLabel?: string }) {
+/** `href` and `linkLabel` come together: the link is drawn only with both. */
+export function SectionTitle({ title, subtitle, href, linkLabel }: { title: string; subtitle?: string; href?: string; linkLabel?: string }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-[#e7ebed] px-5 py-4">
       <div><h2 className="text-sm font-semibold tracking-[-0.015em] text-[#1c2831]">{title}</h2>{subtitle ? <p className="mt-0.5 text-[10px] text-[#8a959d]">{subtitle}</p> : null}</div>
-      {href ? <Link href={href} className="flex items-center gap-1 text-[10px] font-bold text-[#118e82] transition hover:text-[#08756b]">{linkLabel}<CrmIcon name="arrow" className="h-3 w-3" /></Link> : null}
+      {href && linkLabel ? <Link href={href} className="flex items-center gap-1 text-[10px] font-bold text-[#118e82] transition hover:text-[#08756b]">{linkLabel}<CrmIcon name="arrow" className="h-3 w-3" /></Link> : null}
     </div>
   );
 }

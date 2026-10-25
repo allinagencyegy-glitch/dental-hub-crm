@@ -1,4 +1,5 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import {
   getDashboardAction,
   getSourceOptionsAction,
@@ -6,7 +7,10 @@ import {
 import { getOpportunityOwnersAction } from '@/server/crm/opportunities/actions';
 import { DashboardHome } from './DashboardHome';
 
-export const metadata = { title: 'Sales dashboard | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.dashboard.pageTitle) };
+}
 
 export default async function CrmHomePage() {
   const session = await requirePermission('dashboard:read');

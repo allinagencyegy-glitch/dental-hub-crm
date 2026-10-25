@@ -271,6 +271,7 @@ export interface LostReasonEntry {
 
 export interface SourceBreakdownEntry {
   id: string;
+  code: string;
   name: string;
   /** lead.created_at inside the range. */
   leads: number;
@@ -758,12 +759,13 @@ export async function getSourceBreakdown(
 
   const { rows } = await db.query<{
     id: string;
+    code: string;
     name: string;
     leads: string;
     wins: string;
     won_value: string;
   }>(
-    `SELECT s.id, s.name,
+    `SELECT s.id, s.code, s.name,
             count(*)::text AS leads,
             count(o.id) FILTER (WHERE ${wonInRange})::text AS wins,
             COALESCE(sum(o.estimated_value) FILTER (WHERE ${wonInRange}), 0)::text AS won_value
@@ -771,13 +773,14 @@ export async function getSourceBreakdown(
        JOIN crm_source s ON s.id = l.source_id
        LEFT JOIN crm_opportunity o ON o.lead_id = l.id
       ${where(clauses)}
-      GROUP BY s.id, s.name
+      GROUP BY s.id, s.code, s.name
       ORDER BY leads DESC, s.name ASC`,
     params,
   );
 
   return rows.map((row) => ({
     id: row.id,
+    code: row.code,
     name: row.name,
     leads: toNumber(row.leads),
     wins: toNumber(row.wins),

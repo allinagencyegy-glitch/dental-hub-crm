@@ -18,6 +18,8 @@ export interface Formatters {
   number: (value: number) => string;
   /** EGP 1,250 / 1,250 ج.م. - whole pounds */
   currency: (value: number) => string;
+  /** EGP 1,250.50 - to the piastre, for the amounts on a quotation */
+  currencyExact: (value: number) => string;
 }
 
 const cache = new Map<Locale, Formatters>();
@@ -38,12 +40,14 @@ export function formatters(locale: Locale): Formatters {
   });
   const number = new Intl.NumberFormat(tag, { maximumFractionDigits: 2 });
   const currency = new Intl.NumberFormat(tag, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 });
+  const currencyExact = new Intl.NumberFormat(tag, { style: 'currency', currency: 'EGP', maximumFractionDigits: 2 });
   const built: Formatters = {
     date: (value) => date.format(value),
     time: (value) => time.format(value),
     dateTime: (value) => dateTime.format(value),
     number: (value) => number.format(value),
     currency: (value) => currency.format(value),
+    currencyExact: (value) => currencyExact.format(value),
   };
   cache.set(locale, built);
   return built;
