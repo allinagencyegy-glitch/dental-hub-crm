@@ -11,5 +11,14 @@ export interface AdminFormState {
   success?: string;
 }
 
+/** The same minimum an admin must meet when creating a user. */
+export const MIN_PASSWORD_LENGTH = 12;
+
+export interface PasswordFormState {
+  error?: string;
+  success?: string;
+}
+
 export const EMPTY_LOGIN_STATE: LoginFormState = {};
 export const EMPTY_ADMIN_STATE: AdminFormState = {};
+export const EMPTY_PASSWORD_STATE: PasswordFormState = {};

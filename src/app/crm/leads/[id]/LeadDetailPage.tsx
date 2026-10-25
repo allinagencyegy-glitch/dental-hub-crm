@@ -53,6 +53,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const [contactedSubmitting, setContactedSubmitting] = useState(false);
   const [archiveSubmitting, setArchiveSubmitting] = useState(false);
   const [restoreSubmitting, setRestoreSubmitting] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // Qualification. estimatedValue is sent as a string and parsed here so the
   // server action receives the number type the domain expects.
@@ -227,13 +228,16 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
   const handleRestore = async () => {
     setRestoreSubmitting(true);
+    setRestoreError(null);
     try {
       const result = await restoreLeadAction(lead.id);
       if (result.ok) {
         window.location.reload();
+      } else {
+        setRestoreError(result.message);
       }
     } catch {
-      // Error handling could be improved with toast notifications
+      setRestoreError('That lead could not be restored.');
     } finally {
       setRestoreSubmitting(false);
     }
@@ -403,6 +407,11 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                 </button>
               )}
             </div>
+            {restoreError ? (
+              <p role="alert" className="mt-2 text-[11px] font-semibold text-[#b83c43]">
+                {restoreError}
+              </p>
+            ) : null}
           </div>
         )}
       </div>

@@ -15,6 +15,8 @@ import {
   resolveOrCreateContact,
   resolvePrimaryAccount,
   IdentityConflictError,
+  DuplicateOpenLeadError,
+  assertNoOpenLeadForContact,
   LeadNotFoundError,
   LeadAlreadyArchivedError,
   LeadNotArchivedError,
@@ -47,7 +49,14 @@ export type CaptureLeadInput = {
 
 export type CaptureLeadResult =
   | { ok: true; leadId: string }
-  | { ok: false; error: 'VALIDATION' | 'UNAUTHORISED' | 'SOURCE_NOT_FOUND' | 'CAMPAIGN_MISMATCH' | 'CATEGORY_NOT_FOUND' | 'OWNER_NOT_FOUND' | 'IDENTITY_CONFLICT' | 'INTERNAL'; message: string; conflict?: { phoneContactId: string; emailContactId: string } };
+  | {
+      ok: false;
+      error: 'VALIDATION' | 'UNAUTHORISED' | 'SOURCE_NOT_FOUND' | 'CAMPAIGN_MISMATCH' | 'CATEGORY_NOT_FOUND' | 'OWNER_NOT_FOUND' | 'IDENTITY_CONFLICT' | 'DUPLICATE_LEAD' | 'INTERNAL';
+      message: string;
+      conflict?: { phoneContactId: string; emailContactId: string };
+      // DUPLICATE_LEAD only, and only when the actor may open that lead.
+      existingLeadId?: string;
+    };
 
 export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
 
@@ -135,6 +144,23 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
   }
   try {
     await client.query('BEGIN');
+
+    // One open lead per contact: a repeat inquiry belongs on the lead already
+    // being worked. Checked under a per-contact lock so two simultaneous
+    // captures cannot both pass.
+    try {
+      await assertNoOpenLeadForContact(client, contactId);
+    } catch (error) {
+      if (!(error instanceof DuplicateOpenLeadError)) throw error;
+      await client.query('ROLLBACK');
+      const mayOpen = actor.role !== 'SALES_REP' || error.ownerUserId === actor.userId;
+      return {
+        ok: false,
+        error: 'DUPLICATE_LEAD',
+        message: error.message,
+        ...(mayOpen ? { existingLeadId: error.existingLeadId } : {}),
+      };
+    }
 
     const lead = await createLead(client, {
       sourceId: source.id,

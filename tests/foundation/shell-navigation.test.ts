@@ -90,6 +90,14 @@ describe('shell navigation', () => {
     expect(body).toContain('Sign out');
   });
 
+  it('serves no mock-data preview pages', async () => {
+    const http = await signedIn();
+
+    for (const path of ['/crm/ui-preview', '/crm/ui-preview/leads', '/crm/ui-preview/pipeline']) {
+      expect((await http.get(path)).status).toBe(404);
+    }
+  });
+
   it('marks exactly the current page', async () => {
     const http = await signedIn();
 

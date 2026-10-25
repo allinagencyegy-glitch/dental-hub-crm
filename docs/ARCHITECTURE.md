@@ -78,6 +78,7 @@ src/
       page.tsx               Foundation home
       forbidden/page.tsx     Explicit 403
       settings/users/        ADMIN user administration
+      settings/password/     Every user changes their own password
     api/health/route.ts      Liveness + readiness
 
   components/shell/          AppShell, SidebarNav, SignOutButton, navigation
@@ -90,10 +91,12 @@ src/
     auth/
       password.ts            argon2id hashing
       session.ts             Opaque session mint / resolve / revoke
+      login-throttle.ts      Per-email sign-in attempt limit
       cookie-name.ts         Cookie name, importable from Proxy
       cookie.ts              'server-only' — cookie read/write
       dal.ts                 'server-only' — THE authorization boundary
       actions.ts             'use server' — login / logout
+      password-actions.ts    'use server' — change own password
       form-state.ts          Types shared with Client Components
     authz/
       permissions.ts         Roles, permissions, can()
@@ -139,11 +142,14 @@ POST /login  (Server Action)
   │
   ├─ zod validates shape
   ├─ email normalised: lower(trim(email))
+  ├─ upsert crm_login_throttle: attempts + 1 (atomic, before any verify)
+  │     └─ over 5 in a 15-minute window → "Too many sign-in attempts"
   ├─ SELECT crm_user WHERE email = $1
   │     └─ not found → verify against a dummy hash, then fail
   ├─ argon2id verify
   ├─ user.is_active checked AFTER verification
   │     └─ all three failures return one identical message
+  ├─ DELETE crm_login_throttle for this email
   ├─ token = randomBytes(32) → base64url          ← never persisted
   ├─ INSERT crm_session (token_hash = sha256(token), expires_at = now + TTL)
   ├─ Set-Cookie: HttpOnly; SameSite=Lax; Secure(prod); Path=/; Expires
@@ -154,6 +160,13 @@ Why a single error message: distinguishing "no such account" from "wrong
 password" from "deactivated" turns the login form into an account-enumeration
 oracle. The dummy-hash verification keeps response times comparable when no
 account exists.
+
+Why throttle per email, counted up front: the attempt is recorded before the
+password is checked, so parallel guesses cannot all see "under the limit".
+Unknown emails are throttled the same way, so a lockout reveals nothing about
+which accounts exist. The trade-off is that anyone can lock a known email out
+for up to 15 minutes; per-IP limits belong at the reverse proxy, where the
+client address can be trusted.
 
 ### Every authenticated request
 
@@ -199,6 +212,27 @@ that check itself, authoritatively.
 `logoutAction` sets `revoked_at` on the session row, clears the cookie, and
 redirects. Because revocation is a database fact, a cookie captured before logout
 is dead the moment it is replayed.
+
+### Change password
+
+```
+POST /crm/settings/password  (Server Action)
+  │
+  ├─ assertPermission('crm:access')        ← any signed-in user, own account only
+  ├─ zod: new ≥ 12 chars, confirmation matches, differs from current
+  ├─ argon2id verify of the CURRENT password
+  │     └─ wrong → "Your current password is incorrect.", nothing written
+  ├─ hash the new password (before the transaction, so no row waits on argon2)
+  └─ one transaction:
+        UPDATE crm_user SET password_hash = …
+        UPDATE crm_session SET revoked_at = now()
+         WHERE user_id = $1 AND id <> <this session> AND revoked_at IS NULL
+```
+
+The current password is required so a session left open on a shared machine
+cannot be used to take the account over. Every other session is revoked because
+changing the password is how a user locks out someone who learned the old one;
+the session making the change stays signed in.
 
 ---
 
@@ -275,6 +309,23 @@ Structural facts worth knowing without opening the migrations:
 | `crm_session_token_hash_len` — `octet_length = 32` | A token hash that is not a SHA-256 digest. |
 | `crm_session_token_hash_unique` | Two sessions sharing a token. |
 | `crm_session_expiry_after_creation` — `expires_at > created_at` | A session with a zero-length or negative lifetime. Immediate invalidation is `revoked_at`'s job; an expired session is a *historical* one whose window has passed, not one that never opened. |
+
+### One open lead per contact
+
+A contact may have at most one **open** lead: status `NEW` or `CONTACTED`, not
+archived, and not yet converted to an opportunity. `captureLeadUseCase` refuses a
+second one with `DUPLICATE_LEAD`, and `restoreLead` refuses to un-archive an open
+lead beside a newer one (`DuplicateOpenLeadError`). The refusal names the owner of
+the existing lead; it links to that lead only for someone allowed to open it.
+Rows that already exist are left as they are.
+
+This cannot be a partial unique index: conversion lives on `crm_opportunity`, so
+a converted lead keeps its `NEW`/`CONTACTED` status and the predicate needs a
+join. Instead both writes run in a transaction that first takes
+`pg_advisory_xact_lock` on the contact (`lockContactLeads`), then checks. Two
+simultaneous captures for one contact therefore serialise and only one lands.
+`createLead` itself stays a low-level primitive without the check, for seeds and
+tests.
 
 `gen_random_uuid()` is built into PostgreSQL 13+, so no extension is required.
 
