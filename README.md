@@ -113,20 +113,30 @@ Further reading:
 - [docs/FOUNDATION-V0.md](docs/FOUNDATION-V0.md): the original foundation scope
   and acceptance criteria
 
-## Before going live
+## Deploying to a server
 
-This repository runs well locally, but it is not yet deployed anywhere. A
-production setup still needs:
+`deploy/setup.sh` turns a fresh Ubuntu 24.04 server into a running CRM in one
+command. It installs Node.js 22, PostgreSQL 17 and Caddy, creates the database
+with a random password (kept in `.env`, readable only by the app user), builds
+the app, runs it under systemd with automatic restart, serves it over HTTPS
+with a certificate Caddy obtains and renews itself, and closes the firewall to
+everything except SSH, HTTP and HTTPS.
 
-- a host for the Node.js server and a managed PostgreSQL database with backups;
-- a domain with HTTPS (the session cookie is `Secure` in production);
-- `npm run db:migrate` against the production database, then
-  `npm run admin:create` once on the server to make the first admin. That admin
-  signs in and adds the rest of the team from **Settings → Users**. Do not run
-  either seed script there.
+```bash
+git clone <repository URL> /opt/dental-hub-crm
+sudo bash /opt/dental-hub-crm/deploy/setup.sh --domain crm.example.com --email you@example.com
+cd /opt/dental-hub-crm && sudo -u dentalhub npm run admin:create
+```
 
-`admin:create` refuses while an active admin already exists. If every admin is
-locked out, `npm run admin:create -- --force` adds another one.
+Point the domain's DNS A record at the server; Caddy issues the certificate as
+soon as the record works. The script is safe to run again and keeps the
+existing database and `.env`. Clone outside `/home` and `/root`, which the
+service cannot see. `bash deploy/setup.sh --help` lists the options.
+
+`admin:create` makes the first admin, who then adds the rest of the team from
+**Settings → Users**. It refuses while an active admin already exists; if every
+admin is locked out, `npm run admin:create -- --force` adds another one. Never
+run either seed script on the server.
 
 ## Known environment constraint
 
