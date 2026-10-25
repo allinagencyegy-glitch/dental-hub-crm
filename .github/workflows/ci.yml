@@ -1,0 +1,63 @@
+name: CI
+
+# The repository's definition of done (AGENTS.md), run on every push and pull
+# request: lint, the CRM domain suite, and the build + HTTP acceptance suite.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # A superuser here, so it has the CREATEDB the test suites need.
+          POSTGRES_USER: dental_hub_crm
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dental_hub_crm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Both suites create and drop their own dental_hub_crm_test_<hex>
+      # databases through this maintenance connection.
+      TEST_ADMIN_DATABASE_URL: postgresql://dental_hub_crm:ci-only-password@127.0.0.1:5432/postgres
+      # Never used by the tests; set so nothing falls back to a real database.
+      DATABASE_URL: postgresql://dental_hub_crm:ci-only-password@127.0.0.1:5432/dental_hub_crm_ci_unused
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: CRM domain suite
+        run: npm run test:crm
+
+      - name: Build and acceptance suite
+        run: npm run test:foundation
