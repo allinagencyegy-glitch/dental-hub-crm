@@ -148,8 +148,8 @@ export async function getPipelineBoardUseCase(
 /** The reference list behind the dashboard's source filter. */
 export async function getSourceOptionsUseCase(
   db?: Db,
-): Promise<{ id: string; name: string }[]> {
+): Promise<{ id: string; code: string; name: string }[]> {
   const database = getDb(db);
   const sources = await listSources(database);
-  return sources.map((source) => ({ id: source.id, name: source.name }));
+  return sources.map((source) => ({ id: source.id, code: source.code, name: source.name }));
 }

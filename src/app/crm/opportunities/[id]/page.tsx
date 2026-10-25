@@ -1,4 +1,5 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { notFound } from 'next/navigation';
 import {
   getOpportunityDetailAction,
@@ -12,7 +13,10 @@ import { listQuotationsAction } from '@/server/crm/quotations/actions';
 import { allowedTransitions, isTerminalStage } from '@/server/crm/opportunities/stage';
 import { OpportunityDetail } from './OpportunityDetail';
 
-export const metadata = { title: 'Opportunity | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.opportunities.detail.pageTitle) };
+}
 
 interface OpportunityPageProps {
   params: Promise<{ id: string }>;

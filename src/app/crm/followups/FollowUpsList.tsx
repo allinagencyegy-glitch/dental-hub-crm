@@ -5,19 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Avatar, PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
-import {
-  ACTION_TYPE_LABELS,
-  type FollowUpActionType,
-} from '@/server/crm/opportunities/followup-actions';
+import type { FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
 import { completeFollowUpAction } from '@/server/crm/opportunities/actions';
 import type { FollowUpListRow, FollowUpWindow } from '@/server/crm/opportunities/followups';
+import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 
-const WINDOWS: { value: FollowUpWindow; label: string; countKey: 'overdue' | 'today' | 'upcoming' | 'completed' }[] = [
-  { value: 'overdue', label: 'Overdue', countKey: 'overdue' },
-  { value: 'today', label: 'Today', countKey: 'today' },
-  { value: 'upcoming', label: 'Upcoming', countKey: 'upcoming' },
-  { value: 'completed', label: 'Completed', countKey: 'completed' },
-];
+const WINDOWS: FollowUpWindow[] = ['overdue', 'today', 'upcoming', 'completed'];
 
 const ACTION_ICON: Record<FollowUpActionType, 'phone' | 'message' | 'meeting' | 'quotation' | 'activity' | 'clock'> = {
   CALL: 'phone',
@@ -40,6 +33,9 @@ interface FollowUpsListProps {
 export function FollowUpsList({ followUps, total, page, limit, window, counts }: FollowUpsListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const m = useMessages();
+  const format = useFormatters();
+  const t = m.followUps;
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +70,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
     event.preventDefault();
     if (!completing) return;
     if (!completionNote.trim()) {
-      setError('Add a short outcome before completing.');
+      setError(m.followUp.outcomeRequired);
       return;
     }
     setBusyId(completing.id);
@@ -90,7 +86,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
       setCompleting(null);
       router.refresh();
     } catch {
-      setError('That action could not be completed.');
+      setError(m.followUp.actionFailed);
     } finally {
       setBusyId(null);
     }
@@ -99,20 +95,20 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
   return (
     <>
       <PageHeader
-        eyebrow="Next actions"
-        title="Follow-ups"
-        description="What you promised, and when it is due. Completed actions stay on the record."
+        eyebrow={t.eyebrow}
+        title={t.heading}
+        description={t.description}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {WINDOWS.map((entry) => {
-          const isActive = window === entry.value;
-          const isOverdue = entry.value === 'overdue';
+          const isActive = window === entry;
+          const isOverdue = entry === 'overdue';
           return (
             <button
-              key={entry.value}
+              key={entry}
               type="button"
-              onClick={() => handleWindowChange(entry.value)}
+              onClick={() => handleWindowChange(entry)}
               className={`rounded-xl bg-white p-4 text-start shadow-[0_1px_2px_rgba(20,35,45,0.04)] transition ${
                 isActive
                   ? 'ring-2 ring-[#18b6a4]'
@@ -122,14 +118,14 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               }`}
             >
               <p className="text-[9px] font-bold uppercase tracking-[0.11em] text-[#7e8992]">
-                {entry.label}
+                {t.windows[entry]}
               </p>
               <p
                 className={`mt-2.5 text-[25px] font-semibold tracking-[-0.045em] ${
                   isOverdue && counts.overdue > 0 ? 'text-[#be3d45]' : 'text-[#17242c]'
                 }`}
               >
-                {counts[entry.countKey]}
+                {counts[entry]}
               </p>
             </button>
           );
@@ -146,11 +142,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
         <div className="divide-y divide-[#edf0f1]">
           {followUps.length === 0 ? (
             <p className="px-5 py-12 text-center text-[11px] text-[#89949c]">
-              {window === 'overdue'
-                ? 'Nothing overdue. Every promised action is on time.'
-                : window === 'completed'
-                  ? 'No actions completed yet.'
-                  : 'No actions scheduled in this window.'}
+              {window === 'overdue' ? t.emptyOverdue : window === 'completed' ? t.emptyCompleted : t.emptyWindow}
             </p>
           ) : (
             followUps.map((followUp) => (
@@ -177,10 +169,10 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
 
                 <div className="min-w-[190px] flex-1">
                   <p className="text-[11px] font-semibold text-[#202e37]">
-                    {ACTION_TYPE_LABELS[followUp.actionType]}
+                    {m.followUpTypes[followUp.actionType]}
                     {followUp.isOverdue ? (
                       <span className="ms-2 rounded-full bg-[#ffeaeb] px-2 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#bd3941]">
-                        Overdue
+                        {m.followUp.overdue}
                       </span>
                     ) : null}
                   </p>
@@ -210,7 +202,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                           : 'bg-[#e8f4ff] text-[#287bb5]'
                       }`}
                     >
-                      {followUp.parentKind === 'lead' ? 'Lead' : 'Deal'}
+                      {followUp.parentKind === 'lead' ? t.lead : t.deal}
                     </span>
                     <Avatar name={followUp.ownerName} size="sm" />
                     {followUp.ownerName}
@@ -223,16 +215,16 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                       followUp.isOverdue ? 'text-[#bd454b]' : 'text-[#4e5c66]'
                     }`}
                   >
-                    {followUp.dueAt.toLocaleDateString()}
+                    {format.date(followUp.dueAt)}
                   </p>
                   <p className="mt-0.5 whitespace-nowrap text-[9px] text-[#929da4]">
-                    {followUp.dueAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {format.time(followUp.dueAt)}
                   </p>
                 </div>
 
                 {followUp.completedAt ? (
                   <span className="w-[92px] text-end text-[9px] font-bold uppercase tracking-[0.08em] text-[#14815f]">
-                    Completed
+                    {m.followUp.completed}
                   </span>
                 ) : (
                   <button
@@ -241,7 +233,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                     onClick={() => openComplete(followUp)}
                     className="h-8 w-[92px] rounded-lg bg-[#132932] text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
                   >
-                    {busyId === followUp.id ? 'Saving…' : 'Complete'}
+                    {busyId === followUp.id ? m.followUp.saving : m.followUp.complete}
                   </button>
                 )}
               </div>
@@ -252,8 +244,8 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
         <div className="flex items-center justify-between border-t border-[#edf0f1] px-5 py-3">
           <p className="text-[10px] text-[#89949c]">
             {total === 0
-              ? 'No actions'
-              : `Showing ${Math.min((page - 1) * limit + 1, total)}–${Math.min(page * limit, total)} of ${total}`}
+              ? t.noActions
+              : t.showing(Math.min((page - 1) * limit + 1, total), Math.min(page * limit, total), total)}
           </p>
           <div className="flex gap-1">
             <button
@@ -262,7 +254,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               onClick={() => pushParams((params) => params.set('page', String(page - 1)))}
               className="h-7 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] text-[#9aa3aa] transition hover:bg-[#f7f9fa] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Previous
+              {t.previous}
             </button>
             <button
               type="button"
@@ -270,7 +262,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               onClick={() => pushParams((params) => params.set('page', String(page + 1)))}
               className="h-7 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Next
+              {t.next}
             </button>
           </div>
         </div>
@@ -282,19 +274,21 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
             onSubmit={handleCompleteSubmit}
             role="dialog"
             aria-modal="true"
-            aria-label="Complete follow-up"
+            aria-label={m.followUp.completeTitle}
             className="w-full max-w-md rounded-xl bg-white p-5 shadow-[0_20px_60px_rgba(15,30,40,0.25)]"
           >
-            <h2 className="text-sm font-semibold text-[#202d35]">Complete follow-up</h2>
+            <h2 className="text-sm font-semibold text-[#202d35]">{m.followUp.completeTitle}</h2>
             <p className="mt-1 text-[10px] text-[#7b8790]">
-              {ACTION_TYPE_LABELS[completing.actionType]} ·{' '}
-              {completing.accountName ?? completing.contactName} · due{' '}
-              {completing.dueAt.toLocaleDateString()}
+              {t.completeSubtitle(
+                m.followUpTypes[completing.actionType],
+                completing.accountName ?? completing.contactName,
+                format.date(completing.dueAt),
+              )}
             </p>
 
             <label className="mt-4 block">
               <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                Outcome (required)
+                {m.followUp.outcomeRequiredLabel}
               </span>
               <textarea
                 value={completionNote}
@@ -302,7 +296,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                 rows={3}
                 required
                 autoFocus
-                placeholder="What actually happened on this action?"
+                placeholder={m.followUp.outcomePlaceholder}
                 className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
               />
             </label>
@@ -313,14 +307,14 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                 onClick={() => setCompleting(null)}
                 className="h-8 rounded-lg border border-[#dfe4e7] px-3 text-[10px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa]"
               >
-                Cancel
+                {m.common.cancel}
               </button>
               <button
                 type="submit"
                 disabled={busyId === completing.id || completionNote.trim().length === 0}
                 className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
               >
-                {busyId === completing.id ? 'Saving…' : 'Complete'}
+                {busyId === completing.id ? m.followUp.saving : m.followUp.complete}
               </button>
             </div>
           </form>

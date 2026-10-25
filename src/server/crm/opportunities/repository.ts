@@ -405,9 +405,12 @@ export interface OpportunityDetail extends Opportunity {
   contactPhoneIsWhatsApp: boolean;
   accountName: string | null;
   productCategoryName: string | null;
+  productCategoryCode: string | null;
   lostReasonLabel: string | null;
+  lostReasonCode: string | null;
   leadStatus: string;
   leadSourceName: string;
+  leadSourceCode: string;
   leadReceivedAt: Date;
 }
 
@@ -420,9 +423,12 @@ type OpportunityDetailRaw = OpportunityRow & {
   contact_phone_is_whatsapp: boolean;
   account_name: string | null;
   product_category_name: string | null;
+  product_category_code: string | null;
   lost_reason_label: string | null;
+  lost_reason_code: string | null;
   lead_status: string;
   lead_source_name: string;
+  lead_source_code: string;
   lead_received_at: Date;
 };
 
@@ -452,10 +458,13 @@ export async function findOpportunityDetailById(
        COALESCE(phone.is_whatsapp, false) AS contact_phone_is_whatsapp,
        a.name        AS account_name,
        pc.name       AS product_category_name,
+       pc.code       AS product_category_code,
        r.label       AS lost_reason_label,
+       r.code        AS lost_reason_code,
        l.status      AS lead_status,
        l.received_at AS lead_received_at,
-       s.name        AS lead_source_name
+       s.name        AS lead_source_name,
+       s.code        AS lead_source_code
      FROM crm_opportunity o
      JOIN crm_user u    ON u.id = o.owner_user_id
      JOIN crm_contact c ON c.id = o.contact_id
@@ -488,9 +497,12 @@ export async function findOpportunityDetailById(
     contactPhoneIsWhatsApp: row.contact_phone_is_whatsapp,
     accountName: row.account_name,
     productCategoryName: row.product_category_name,
+    productCategoryCode: row.product_category_code,
     lostReasonLabel: row.lost_reason_label,
+    lostReasonCode: row.lost_reason_code,
     leadStatus: row.lead_status,
     leadSourceName: row.lead_source_name,
+    leadSourceCode: row.lead_source_code,
     leadReceivedAt: row.lead_received_at,
   };
 }
@@ -893,7 +905,11 @@ export async function reassignOpportunityOwner(
     opportunityId,
     activityType: 'OWNER_CHANGED',
     description: `Owner changed to ${owner.display_name}`,
-    metadata: { fromOwnerUserId: existing.ownerUserId, toOwnerUserId: newOwnerUserId },
+    metadata: {
+      fromOwnerUserId: existing.ownerUserId,
+      toOwnerUserId: newOwnerUserId,
+      toOwnerName: owner.display_name,
+    },
     actorUserId: actor.userId,
   });
 

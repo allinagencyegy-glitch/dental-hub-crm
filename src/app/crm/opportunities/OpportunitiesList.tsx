@@ -5,23 +5,21 @@ import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Avatar, PageHeader, Toolbar } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
-import {
-  STAGE_LABELS,
-  type OpportunityStage,
-} from '@/server/crm/opportunities/stage';
-import { ACTION_TYPE_LABELS, type FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import type { OpportunityStage } from '@/server/crm/opportunities/stage';
+import { isFollowUpActionType } from '@/server/crm/opportunities/followup-actions';
 import type { OpportunityListRow, OpportunityStageFilter } from '@/server/crm/opportunities/repository';
+import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 
-const STAGE_FILTERS: { value: OpportunityStageFilter; label: string }[] = [
-  { value: 'OPEN', label: 'Open' },
-  { value: 'ALL', label: 'All' },
-  { value: 'QUALIFIED', label: 'Qualified' },
-  { value: 'NEEDS_ANALYSIS', label: 'Needs analysis' },
-  { value: 'PROPOSAL', label: 'Proposal' },
-  { value: 'NEGOTIATION', label: 'Negotiation' },
-  { value: 'ON_HOLD', label: 'On hold' },
-  { value: 'WON', label: 'Won' },
-  { value: 'LOST', label: 'Lost' },
+const STAGE_FILTERS: OpportunityStageFilter[] = [
+  'OPEN',
+  'ALL',
+  'QUALIFIED',
+  'NEEDS_ANALYSIS',
+  'PROPOSAL',
+  'NEGOTIATION',
+  'ON_HOLD',
+  'WON',
+  'LOST',
 ];
 
 /** Pipeline stages in pipeline order, for the tally strip. */
@@ -68,6 +66,11 @@ export function OpportunitiesList({
 }: OpportunitiesListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const m = useMessages();
+  const format = useFormatters();
+  const t = m.opportunities.list;
+  const filterLabel = (filter: OpportunityStageFilter) =>
+    filter === 'OPEN' ? t.open : filter === 'ALL' ? t.all : m.opportunityStage[filter];
 
   const [searchInput, setSearchInput] = useState(search);
 
@@ -124,10 +127,10 @@ export function OpportunitiesList({
   return (
     <>
       <PageHeader
-        eyebrow="Commercial pipeline"
-        title="Opportunities"
-        description="Every qualified deal, its owner, its stage and the next action that is due."
-        actionLabel="Capture lead"
+        eyebrow={m.opportunities.eyebrow}
+        title={t.heading}
+        description={t.description}
+        actionLabel={t.captureLead}
         actionIcon="plus"
         actionHref="/crm/leads/capture"
       />
@@ -139,7 +142,7 @@ export function OpportunitiesList({
             className="rounded-xl bg-white p-4 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#e4e9eb]"
           >
             <p className="text-[9px] font-bold uppercase tracking-[0.11em] text-[#7e8992]">
-              {STAGE_LABELS[stageKey]}
+              {m.opportunityStage[stageKey]}
             </p>
             <p className="mt-2.5 text-[25px] font-semibold tracking-[-0.045em] text-[#17242c]">
               {counts[stageKey] ?? 0}
@@ -150,17 +153,17 @@ export function OpportunitiesList({
 
       <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-[#dce3e6]">
         {STAGE_FILTERS.map((filter) => {
-          const isActive = stage === filter.value;
+          const isActive = stage === filter;
           return (
             <button
-              key={filter.value}
+              key={filter}
               type="button"
-              onClick={() => handleStageChange(filter.value)}
+              onClick={() => handleStageChange(filter)}
               className={`relative px-4 pb-3 text-[11px] font-semibold transition ${
                 isActive ? 'text-[#128d81]' : 'text-[#7b8790] hover:text-[#33414a]'
               }`}
             >
-              {filter.label}
+              {filterLabel(filter)}
               {isActive ? <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[#18b6a4]" /> : null}
             </button>
           );
@@ -169,7 +172,7 @@ export function OpportunitiesList({
 
       <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(20,35,45,.04)] ring-1 ring-[#dfe5e8]">
         <Toolbar
-          placeholder="Search by contact, account, owner or reference..."
+          placeholder={t.searchPlaceholder}
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           onSearchSubmit={handleSearchSubmit}
@@ -181,18 +184,18 @@ export function OpportunitiesList({
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce2e5] bg-white px-3 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa]"
             >
               <CrmIcon name="x" className="h-3.5 w-3.5" />
-              Clear search
+              {t.clearSearch}
             </button>
           ) : null}
           {canAssignOwner ? (
             <label className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-[#7b8790]">Owner</span>
+              <span className="text-[10px] font-semibold text-[#7b8790]">{t.owner}</span>
               <select
                 value={selectedOwner}
                 onChange={(event) => handleOwnerChange(event.target.value)}
                 className="h-9 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-medium text-[#3c4a54] outline-none focus:border-[#18b6a4]"
               >
-                <option value="">Everyone</option>
+                <option value="">{t.everyone}</option>
                 {owners.map((owner) => (
                   <option key={owner.id} value={owner.id}>
                     {owner.displayName}
@@ -207,13 +210,13 @@ export function OpportunitiesList({
           <table className="w-full min-w-[920px] text-start">
             <thead className="border-b border-[#e5eaec] bg-[#f8fafb] text-[9px] font-bold uppercase tracking-[0.1em] text-[#8b969e]">
               <tr>
-                <th className="px-4 py-3">Reference</th>
-                <th className="px-3 py-3">Contact / Account</th>
-                <th className="px-3 py-3">Stage</th>
-                <th className="px-3 py-3">Owner</th>
-                <th className="px-3 py-3">Next action</th>
-                <th className="px-3 py-3">Due</th>
-                <th className="px-3 py-3 text-end">Value</th>
+                <th className="px-4 py-3">{t.reference}</th>
+                <th className="px-3 py-3">{t.contactAccount}</th>
+                <th className="px-3 py-3">{t.stage}</th>
+                <th className="px-3 py-3">{t.owner}</th>
+                <th className="px-3 py-3">{t.nextAction}</th>
+                <th className="px-3 py-3">{t.due}</th>
+                <th className="px-3 py-3 text-end">{t.value}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf0f1]">
@@ -222,19 +225,19 @@ export function OpportunitiesList({
                   <td colSpan={7} className="px-4 py-12 text-center text-[#89949c]">
                     {search ? (
                       <span>
-                        No opportunities match “{search}”.
+                        {t.noMatch(search)}
                         <button
                           type="button"
                           onClick={handleSearchClear}
                           className="ms-2 font-semibold text-[#118e82] hover:underline"
                         >
-                          Clear search
+                          {t.clearSearch}
                         </button>
                       </span>
                     ) : stage === 'OPEN' && openTotal === 0 ? (
-                      'No open opportunities. Qualify a lead to start commercial work.'
+                      t.noOpen
                     ) : (
-                      'No opportunities found.'
+                      t.none
                     )}
                   </td>
                 </tr>
@@ -254,7 +257,7 @@ export function OpportunitiesList({
                         {opportunity.id.slice(0, 8)}
                       </Link>
                       <p className="mt-1 text-[9px] text-[#929da4]">
-                        Updated {opportunity.updatedAt.toLocaleDateString()}
+                        {t.updated(format.date(opportunity.updatedAt))}
                       </p>
                     </td>
 
@@ -269,7 +272,7 @@ export function OpportunitiesList({
                             {opportunity.contactName}
                           </Link>
                           <p className="mt-0.5 truncate text-[9px] text-[#68757e]">
-                            {opportunity.accountName ?? 'No account linked'}
+                            {opportunity.accountName ?? t.noAccount}
                           </p>
                         </div>
                       </div>
@@ -277,11 +280,11 @@ export function OpportunitiesList({
 
                     <td className="px-3 py-3.5">
                       <span
-                        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold tracking-[0.06em] ${
+                        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.06em] ${
                           STAGE_CHIP[opportunity.stage]
                         }`}
                       >
-                        {STAGE_LABELS[opportunity.stage].toUpperCase()}
+                        {m.opportunityStage[opportunity.stage]}
                       </span>
                     </td>
 
@@ -305,9 +308,9 @@ export function OpportunitiesList({
                           />
                           <div className="min-w-0">
                             <p className="truncate text-[10px] font-semibold text-[#35434c]">
-                              {ACTION_TYPE_LABELS[
-                                opportunity.nextAction.actionType as FollowUpActionType
-                              ] ?? opportunity.nextAction.actionType}
+                              {isFollowUpActionType(opportunity.nextAction.actionType)
+                                ? m.followUpTypes[opportunity.nextAction.actionType]
+                                : opportunity.nextAction.actionType}
                             </p>
                             {opportunity.nextAction.note ? (
                               <p className="mt-0.5 truncate text-[9px] text-[#8a959d]">
@@ -319,7 +322,7 @@ export function OpportunitiesList({
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-[#a07a4a]">
                           <CrmIcon name="alert" className="h-3.5 w-3.5" />
-                          No next action
+                          {t.noNextAction}
                         </span>
                       )}
                     </td>
@@ -332,13 +335,10 @@ export function OpportunitiesList({
                               opportunity.nextAction.isOverdue ? 'text-[#bd454b]' : 'text-[#4e5c66]'
                             }`}
                           >
-                            {opportunity.nextAction.dueAt.toLocaleDateString()}
+                            {format.date(opportunity.nextAction.dueAt)}
                           </p>
                           <p className="mt-0.5 whitespace-nowrap text-[9px] text-[#929da4]">
-                            {opportunity.nextAction.dueAt.toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
+                            {format.time(opportunity.nextAction.dueAt)}
                           </p>
                         </div>
                       ) : (
@@ -350,11 +350,7 @@ export function OpportunitiesList({
                       <span className="whitespace-nowrap text-[11px] font-semibold text-[#2c3a43]">
                         {opportunity.estimatedValue === null
                           ? '—'
-                          : opportunity.estimatedValue.toLocaleString('en-EG', {
-                              style: 'currency',
-                              currency: 'EGP',
-                              maximumFractionDigits: 0,
-                            })}
+                          : format.currency(opportunity.estimatedValue)}
                       </span>
                     </td>
                   </tr>
@@ -366,8 +362,8 @@ export function OpportunitiesList({
           <div className="flex items-center justify-between border-t border-[#edf0f1] px-4 py-3">
             <p className="text-[10px] text-[#89949c]">
               {total === 0
-                ? 'No opportunities'
-                : `Showing ${Math.min((page - 1) * limit + 1, total)}–${Math.min(page * limit, total)} of ${total}`}
+                ? t.empty
+                : t.showing(Math.min((page - 1) * limit + 1, total), Math.min(page * limit, total), total)}
             </p>
             <div className="flex gap-1">
               <button
@@ -376,7 +372,7 @@ export function OpportunitiesList({
                 onClick={() => handlePageChange(page - 1)}
                 className="h-7 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] text-[#9aa3aa] transition hover:bg-[#f7f9fa] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Previous
+                {t.previous}
               </button>
               <button
                 type="button"
@@ -384,7 +380,7 @@ export function OpportunitiesList({
                 onClick={() => handlePageChange(page + 1)}
                 className="h-7 rounded-md border border-[#dfe4e7] px-2.5 text-[9px] font-semibold text-[#53616a] transition hover:bg-[#f7f9fa] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Next
+                {t.next}
               </button>
             </div>
           </div>
@@ -392,7 +388,7 @@ export function OpportunitiesList({
       </div>
 
       <p className="mt-3 text-[10px] text-[#98a2a9]">
-        Closed deals keep their full follow-up history. Won and lost deals cannot be reopened.
+        {t.closedNote}
       </p>
     </>
   );

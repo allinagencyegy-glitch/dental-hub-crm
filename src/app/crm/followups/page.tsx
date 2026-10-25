@@ -1,9 +1,13 @@
 import { requirePermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import { listFollowUpsAction, getFollowUpWindowCountsAction } from '@/server/crm/opportunities/actions';
 import { FollowUpsList } from './FollowUpsList';
 import type { FollowUpWindow } from '@/server/crm/opportunities/followups';
 
-export const metadata = { title: 'Follow-ups | Dental Hub CRM' };
+export async function generateMetadata() {
+  const m = await getMessages();
+  return { title: m.app.title(m.followUps.pageTitle) };
+}
 
 const VALID_WINDOWS = ['overdue', 'today', 'upcoming', 'completed'] as const;
 type Window = (typeof VALID_WINDOWS)[number];

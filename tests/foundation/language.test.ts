@@ -4,6 +4,7 @@ import { connectTestDb, uniqueEmail, TEST_PASSWORD } from './setup/db';
 import { HttpClient, LOCALE_COOKIE, parseHiddenFields, type HttpResponse } from './setup/http';
 import { createUser } from '../../src/server/users/repository';
 import { captureLeadUseCase } from '../../src/server/crm/leads/service';
+import { createFollowUpUseCase, qualifyLeadUseCase } from '../../src/server/crm/opportunities/service';
 
 function visitor(locale: 'ar' | 'en' | null): HttpClient {
   return new HttpClient(inject('baseUrl'), locale);
@@ -208,6 +209,73 @@ describe('interface language', () => {
       const englishDetail = (await english.get(`/crm/leads/${captured.leadId}`)).body;
       expect(englishDetail).toContain('Lead overview');
       expect(englishDetail).toContain('Dental units');
+    });
+
+    it('shows the opportunity, pipeline and follow-up pages in Arabic', async () => {
+      const rep = await createUser(db, {
+        displayName: 'Arabic Deals Rep',
+        email: uniqueEmail('arabic.deals'),
+        password: TEST_PASSWORD,
+        role: 'SALES_REP',
+      });
+      const actor = { userId: rep.id, role: 'SALES_REP' as const };
+      const captured = await captureLeadUseCase(
+        actor,
+        {
+          fullName: 'Dr. Arabic Deal',
+          email: uniqueEmail('arabic.deal.contact'),
+          sourceCode: 'facebook',
+          productCategoryCode: 'autoclaves',
+        },
+        db,
+      );
+      if (!captured.ok) throw new Error(`capture failed: ${captured.message}`);
+      const qualified = await qualifyLeadUseCase(actor, captured.leadId, { estimatedValue: 185000 }, db);
+      if (!qualified.ok) throw new Error(`qualify failed: ${qualified.message}`);
+      const scheduled = await createFollowUpUseCase(
+        actor,
+        qualified.opportunity.id,
+        { actionType: 'MEETING', dueAt: new Date(Date.now() + 86_400_000) },
+        db,
+      );
+      if (!scheduled.ok) throw new Error(`schedule failed: ${scheduled.message}`);
+
+      const http = visitor('ar');
+      expect((await http.submitForm('/login', { email: rep.email, password: TEST_PASSWORD })).status).toBe(303);
+
+      const list = (await http.get('/crm/opportunities')).body;
+      for (const text of ['كل صفقة مؤهلة', 'مؤهلة', 'اجتماع', '185,000', 'ج.م.', 'الخطوة القادمة']) {
+        expect(list).toContain(text);
+      }
+      expect(list).toContain('<title>الفرص | Dental Hub CRM</title>');
+      expect(list).not.toContain('Next action');
+
+      const detail = (await http.get(`/crm/opportunities/${qualified.opportunity.id}`)).body;
+      for (const text of [
+        'العودة إلى الفرص',
+        'أجهزة التعقيم (أوتوكلاف)',
+        'المصدر: فيسبوك',
+        'تم التحويل إلى فرصة',
+        'جدولة متابعة: اجتماع',
+        'وصل العميل المحتمل عن طريق فيسبوك',
+        'سجل المراحل',
+      ]) {
+        expect(detail).toContain(text);
+      }
+      // The props in the page's script payload keep the stored English description;
+      // what is drawn is the Arabic title.
+      expect(detail.replace(/<script[\s\S]*?<\/script>/g, '')).not.toContain('Qualified into an opportunity');
+
+      const pipeline = (await http.get('/crm/pipeline')).body;
+      for (const text of ['مسار المبيعات', 'تحليل الاحتياجات', 'التالي: اجتماع', 'كل المصادر', 'فيسبوك']) {
+        expect(pipeline).toContain(text);
+      }
+
+      const followUps = (await http.get('/crm/followups')).body;
+      for (const text of ['ما وعدت به', 'متأخرة', 'القادمة', 'صفقة', 'إنهاء']) {
+        expect(followUps).toContain(text);
+      }
+      expect(followUps).toContain('<title>المتابعات | Dental Hub CRM</title>');
     });
   });
 });

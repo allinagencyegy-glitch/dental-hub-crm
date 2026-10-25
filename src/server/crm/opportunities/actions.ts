@@ -3,6 +3,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { assertPermission } from '@/server/auth/dal';
+import { getMessages } from '@/i18n/server';
 import {
   qualifyLeadUseCase,
   listOpportunitiesUseCase,
@@ -37,6 +38,7 @@ import {
 } from './service';
 import { OPPORTUNITY_STAGES, isOpportunityStage } from './stage';
 import { FOLLOW_UP_ACTION_TYPES } from './followup-actions';
+import { localise } from './messages';
 import type { OpportunityStageFilter } from './repository';
 import type { FollowUpWindow } from './followups';
 
@@ -54,7 +56,7 @@ export async function qualifyLeadAction(
 ): Promise<QualifyLeadResult> {
   const session = await assertPermission('leads:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return qualifyLeadUseCase(actor, leadId, input);
+  return localise('qualify', await qualifyLeadUseCase(actor, leadId, input), await getMessages());
 }
 
 export async function listOpportunitiesAction(
@@ -122,11 +124,13 @@ export async function changeOpportunityStageAction(
   const session = await assertPermission(isClosing ? 'opportunities:close' : 'opportunities:advance');
   const actor: Actor = { userId: session.user.id, role: session.role };
 
+  const m = await getMessages();
+
   if (!isOpportunityStage(input.toStage)) {
-    return { ok: false, error: 'VALIDATION', message: 'Unknown opportunity stage.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.unknownStage };
   }
 
-  return changeOpportunityStageUseCase(actor, opportunityId, input);
+  return localise('changeStage', await changeOpportunityStageUseCase(actor, opportunityId, input), m);
 }
 
 export async function updateOpportunityAction(
@@ -135,7 +139,7 @@ export async function updateOpportunityAction(
 ): Promise<UpdateOpportunityResult> {
   const session = await assertPermission('opportunities:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return updateOpportunityUseCase(actor, opportunityId, input);
+  return localise('update', await updateOpportunityUseCase(actor, opportunityId, input), await getMessages());
 }
 
 export async function reassignOpportunityOwnerAction(
@@ -144,7 +148,11 @@ export async function reassignOpportunityOwnerAction(
 ): Promise<ReassignOwnerResult> {
   const session = await assertPermission('opportunities:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return reassignOpportunityOwnerUseCase(actor, opportunityId, newOwnerUserId);
+  return localise(
+    'reassign',
+    await reassignOpportunityOwnerUseCase(actor, opportunityId, newOwnerUserId),
+    await getMessages(),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -158,16 +166,18 @@ export async function createFollowUpAction(
   const session = await assertPermission('followups:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
 
+  const m = await getMessages();
+
   if (!(FOLLOW_UP_ACTION_TYPES as readonly string[]).includes(input.actionType)) {
-    return { ok: false, error: 'VALIDATION', message: 'Unknown follow-up action type.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.unknownActionType };
   }
 
   const dueAt = new Date(input.dueAt);
   if (Number.isNaN(dueAt.getTime())) {
-    return { ok: false, error: 'VALIDATION', message: 'A due date is required.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.dueRequired };
   }
 
-  return createFollowUpUseCase(actor, opportunityId, { ...input, dueAt });
+  return localise('scheduleOnOpportunity', await createFollowUpUseCase(actor, opportunityId, { ...input, dueAt }), m);
 }
 
 /**
@@ -181,16 +191,18 @@ export async function createLeadFollowUpAction(
   const session = await assertPermission('followups:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
 
+  const m = await getMessages();
+
   if (!(FOLLOW_UP_ACTION_TYPES as readonly string[]).includes(input.actionType)) {
-    return { ok: false, error: 'VALIDATION', message: 'Unknown follow-up action type.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.unknownActionType };
   }
 
   const dueAt = new Date(input.dueAt);
   if (Number.isNaN(dueAt.getTime())) {
-    return { ok: false, error: 'VALIDATION', message: 'A due date is required.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.dueRequired };
   }
 
-  return createLeadFollowUpUseCase(actor, leadId, { ...input, dueAt });
+  return localise('scheduleOnLead', await createLeadFollowUpUseCase(actor, leadId, { ...input, dueAt }), m);
 }
 
 export async function completeFollowUpAction(
@@ -199,7 +211,7 @@ export async function completeFollowUpAction(
 ): Promise<CompleteFollowUpResult> {
   const session = await assertPermission('followups:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return completeFollowUpUseCase(actor, followUpId, input);
+  return localise('complete', await completeFollowUpUseCase(actor, followUpId, input), await getMessages());
 }
 
 export async function rescheduleFollowUpAction(
@@ -209,12 +221,14 @@ export async function rescheduleFollowUpAction(
   const session = await assertPermission('followups:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
 
+  const m = await getMessages();
+
   const dueAt = new Date(newDueAt);
   if (Number.isNaN(dueAt.getTime())) {
-    return { ok: false, error: 'VALIDATION', message: 'A due date is required.' };
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.dueRequired };
   }
 
-  return rescheduleFollowUpUseCase(actor, followUpId, dueAt);
+  return localise('reschedule', await rescheduleFollowUpUseCase(actor, followUpId, dueAt), m);
 }
 
 export async function listFollowUpsAction(
