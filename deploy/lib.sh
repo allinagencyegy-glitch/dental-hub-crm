@@ -1,11 +1,12 @@
 # shellcheck shell=bash
-# Shared by setup.sh and update.sh. Sourced, never run on its own.
+# Shared by the deploy scripts. Sourced, never run on its own.
 #
 # Layout on the server:
 #   <checkout>                       the git clone the scripts live in, owned by root
 #   /var/lib/dentalhub/shared/.env   database password and settings, readable only by dentalhub
 #   /var/lib/dentalhub/releases/*    one fully built copy of the app per update
 #   /var/lib/dentalhub/current       symlink to the release the service runs
+#   /var/backups/dentalhub/*.dump    database backups, readable only by root
 #
 # The constants are used by the scripts that source this file.
 # shellcheck disable=SC2034
@@ -20,6 +21,9 @@ readonly ENV_FILE="$APP_HOME/shared/.env"
 readonly ENV_MARKER='# Written by deploy/setup.sh.'
 readonly APP_PORT=3000
 readonly SERVICE=dental-hub-crm
+readonly DB_NAME=dental_hub_crm
+readonly DB_USER=dental_hub_crm
+readonly BACKUP_DIR=/var/backups/dentalhub
 readonly HEALTH_URL="http://127.0.0.1:$APP_PORT/api/health"
 # Written into a release once it has served healthily.
 readonly HEALTHY_MARKER=HEALTHY
@@ -40,6 +44,9 @@ as_app_in() {
   shift
   as_app env -C "$dir" "$@"
 }
+
+# psql as the PostgreSQL superuser, stopping at the first error.
+psql_admin() { runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 "$@"; }
 
 # Waits up to $1 seconds (default 60) for the app to answer its health check.
 wait_healthy() {

@@ -7,7 +7,7 @@
 # What it does, in order:
 #   - pulls the latest commit of the checkout's branch
 #   - builds it in a new release folder while the current version keeps serving
-#   - applies new database migrations
+#   - backs up the database, then applies new database migrations
 #   - switches the service to the new release and checks that it answers
 #   - if the new release does not come up, switches straight back to the previous one
 #   - keeps the last few releases so you can go back with --rollback
@@ -117,6 +117,12 @@ main() {
   as_app_in "$release" npm ci --no-audit --no-fund
   step='building'
   as_app_in "$release" npm run build
+
+  # Rollback does not undo migrations; this backup can.
+  if [[ -n "$previous" ]]; then
+    step='backing up the database'
+    bash "$script_dir/backup.sh" --label before-update
+  fi
 
   log 'Applying database migrations'
   step='applying migrations'
