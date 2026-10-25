@@ -19,7 +19,7 @@ export default async function UsersSettingsPage() {
       <PageHeader
         eyebrow="Settings"
         title="Users"
-        description="Dental Hub staff accounts. Add people, change their role, and deactivate anyone who leaves."
+        description="Dental Hub staff accounts. Add people, change their role, reset a forgotten password, and deactivate anyone who leaves."
       />
 
       {mayManage ? (
@@ -52,7 +52,7 @@ export default async function UsersSettingsPage() {
               <p className="mt-0.5 text-xs text-[#8a959d]">{ROLE_LABELS[user.role]}</p>
             </div>
 
-            {mayManage ? <UserRowActions user={user} /> : null}
+            {mayManage ? <UserRowActions user={user} isSelf={user.id === session.user.id} /> : null}
           </li>
         ))}
       </ul>

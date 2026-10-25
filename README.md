@@ -19,7 +19,7 @@ SQL, zod, vitest.
 | Pipeline | `/crm/pipeline` | Board of open deals by stage, filtered by owner, source or stage |
 | Quotations | from an opportunity | Line items in EGP, discount and tax, draft → sent → accepted/rejected/expired, numbered revisions, printable view / PDF |
 | Follow-ups | `/crm/followups` | Everything due, overdue or done, with the outcome recorded on completion |
-| Users | `/crm/settings/users` | Admins create accounts, change roles, deactivate people |
+| Users | `/crm/settings/users` | Admins create accounts, change roles, reset a forgotten password, deactivate people |
 
 Rules the system enforces for you:
 
