@@ -20,6 +20,7 @@
  */
 import type { Db } from '@/server/db/types';
 import { Pool, PoolClient } from 'pg';
+import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
 import { likePattern } from '@/server/db/like';
 import { normaliseEmail } from '@/server/users/repository';
 import { normalisePhoneToE164 } from '@/server/crm/contacts/phone';
@@ -218,6 +219,71 @@ export class LeadNotArchivedError extends Error {
     super('Lead is not archived.');
     this.name = 'LeadNotArchivedError';
   }
+}
+
+/**
+ * A contact may have at most one OPEN lead. Raised when a capture or a restore
+ * would give it a second one; the existing lead should be worked instead.
+ */
+export class DuplicateOpenLeadError extends Error {
+  constructor(
+    public readonly existingLeadId: string,
+    public readonly ownerUserId: string,
+    public readonly ownerName: string,
+  ) {
+    super(`This contact already has an open lead, owned by ${ownerName}. Work that lead instead of opening another.`);
+    this.name = 'DuplicateOpenLeadError';
+  }
+}
+
+/**
+ * Serialises every write that could open a lead for this contact, until the
+ * caller's transaction ends. Must be called inside a transaction.
+ *
+ * "One open lead per contact" cannot be a partial unique index: a converted
+ * lead keeps its NEW/CONTACTED status (conversion lives on crm_opportunity),
+ * so the predicate needs a join. The check therefore runs under this lock.
+ */
+export async function lockContactLeads(db: Db, contactId: string): Promise<void> {
+  await db.query("SELECT pg_advisory_xact_lock(hashtextextended('crm_lead.contact:' || $1, 0))", [contactId]);
+}
+
+/**
+ * The contact's open lead, if any: not disqualified, not archived and not yet
+ * converted to an opportunity. Deliberately NOT row-scoped - a rep must learn
+ * that a colleague already owns this contact's inquiry.
+ */
+export async function findOpenLeadForContact(
+  db: Db,
+  contactId: string,
+  options: { excludeLeadId?: string } = {},
+): Promise<{ id: string; ownerUserId: string; ownerName: string } | null> {
+  const { rows } = await db.query<{ id: string; owner_user_id: string; owner_display_name: string }>(
+    `SELECT l.id, l.owner_user_id, u.display_name AS owner_display_name
+       FROM crm_lead l
+       JOIN crm_user u ON u.id = l.owner_user_id
+      WHERE l.contact_id = $1
+        AND l.status IN ('NEW', 'CONTACTED')
+        AND l.archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM crm_opportunity o WHERE o.lead_id = l.id)
+        AND ($2::uuid IS NULL OR l.id <> $2::uuid)
+      ORDER BY l.received_at ASC
+      LIMIT 1`,
+    [contactId, options.excludeLeadId ?? null],
+  );
+  const row = rows[0];
+  return row ? { id: row.id, ownerUserId: row.owner_user_id, ownerName: row.owner_display_name } : null;
+}
+
+/** Locks the contact and throws DuplicateOpenLeadError if it has an open lead. */
+export async function assertNoOpenLeadForContact(
+  db: Db,
+  contactId: string,
+  options: { excludeLeadId?: string } = {},
+): Promise<void> {
+  await lockContactLeads(db, contactId);
+  const existing = await findOpenLeadForContact(db, contactId, options);
+  if (existing) throw new DuplicateOpenLeadError(existing.id, existing.ownerUserId, existing.ownerName);
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -614,7 +680,8 @@ export async function archiveLead(
 /**
  * Restores an archived lead.
  * Clears archived_at and archived_by_user_id.
- * Preserves everything else.
+ * Preserves everything else. Refused with DuplicateOpenLeadError when the
+ * restored lead would be the contact's second open lead.
  * Row-scope authorization: SALES_REP can only restore own leads.
  */
 export async function restoreLead(
@@ -629,17 +696,33 @@ export async function restoreLead(
     throw new LeadNotArchivedError();
   }
 
-  const { rows } = await db.query<LeadRow>(
-    `UPDATE crm_lead
-        SET archived_at = NULL,
-            archived_by_user_id = NULL,
-            updated_at = now()
-      WHERE id = $1
-      RETURNING ${LEAD_RETURNING_COLUMNS}`,
-    [leadId],
-  );
+  const { client, release } = await beginTransaction(db);
+  try {
+    // Restoring an open lead must not put it beside the contact's newer open
+    // lead. A disqualified or converted lead is not open, so it never collides.
+    const { rows: converted } = await client.query('SELECT 1 FROM crm_opportunity WHERE lead_id = $1', [leadId]);
+    if (lead.status !== 'DISQUALIFIED' && converted.length === 0) {
+      await assertNoOpenLeadForContact(client, lead.contactId, { excludeLeadId: leadId });
+    }
 
-  return toLead(rows[0]);
+    const { rows } = await client.query<LeadRow>(
+      `UPDATE crm_lead
+          SET archived_at = NULL,
+              archived_by_user_id = NULL,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING ${LEAD_RETURNING_COLUMNS}`,
+      [leadId],
+    );
+
+    await commitTransaction(client);
+    return toLead(rows[0]);
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    release();
+  }
 }
 
 /**

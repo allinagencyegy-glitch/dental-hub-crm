@@ -31,4 +31,6 @@ export const PRIMARY_NAV: NavItem[] = [
 
 export const SETTINGS_NAV: NavItem[] = [
   { label: 'Users', href: '/crm/settings/users', status: 'available', permission: 'users:read' },
+  // Every signed-in user manages their own password.
+  { label: 'Password', href: '/crm/settings/password', status: 'available' },
 ];

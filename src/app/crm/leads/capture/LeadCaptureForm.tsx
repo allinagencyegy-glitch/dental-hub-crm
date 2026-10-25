@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
@@ -55,6 +56,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
   const [loadingOwners, setLoadingOwners] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingLeadId, setExistingLeadId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const canAssignOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
@@ -115,6 +117,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setExistingLeadId(null);
     setFieldErrors({});
 
     // Validate required fields
@@ -147,10 +150,9 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
       if (result.ok) {
         router.push(`/crm/leads/${result.leadId}`);
       } else {
-        if (result.error === 'IDENTITY_CONFLICT') {
-          setError(result.message);
-        } else {
-          setError(result.message);
+        setError(result.message);
+        if (result.error === 'DUPLICATE_LEAD' && result.existingLeadId) {
+          setExistingLeadId(result.existingLeadId);
         }
       }
     } catch {
@@ -171,6 +173,11 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
       {error && (
         <div className="mb-4 rounded-lg bg-[#ffe9ea] border border-[#f4c7ca] p-4 text-sm text-[#c43f47]" role="alert">
           {error}
+          {existingLeadId ? (
+            <Link href={`/crm/leads/${existingLeadId}`} className="mt-2 block font-semibold underline">
+              Open the existing lead
+            </Link>
+          ) : null}
         </div>
       )}
 
