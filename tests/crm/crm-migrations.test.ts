@@ -39,6 +39,7 @@ describe('crm migrations', () => {
       { version: 9, name: 'crm_quotation_history_protection' },
       { version: 10, name: 'crm_lead_followups' },
       { version: 11, name: 'crm_quotation_single_accepted' },
+      { version: 12, name: 'auth_login_throttle' },
     ]);
     expect(outcome.skipped).toEqual([]);
   });
@@ -47,12 +48,12 @@ describe('crm migrations', () => {
     const outcome = await runMigrations(client);
 
     expect(outcome.applied).toEqual([]);
-    expect(outcome.skipped).toHaveLength(11);
+    expect(outcome.skipped).toHaveLength(12);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('11');
+    expect(rows[0].count).toBe('12');
   });
 
   it('seeds stable catalog reference data on fresh apply', async () => {
