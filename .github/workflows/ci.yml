@@ -56,6 +56,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Deploy scripts
+        run: shellcheck deploy/*.sh
+
       - name: CRM domain suite
         run: npm run test:crm
 
