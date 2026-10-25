@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { db } from '@/server/db/client';
 import { findUserByEmail } from '@/server/users/repository';
 import { verifyAgainstDummyHash, verifyPassword } from './password';
+import { clearLoginAttempts, reserveLoginAttempt } from './login-throttle';
 import { createSession, revokeSession } from './session';
 import { clearSessionCookie, readSessionCookie, setSessionCookie } from './cookie';
 import type { LoginFormState } from './form-state';
@@ -15,6 +16,15 @@ import type { LoginFormState } from './form-state';
  * account. Anything more specific is an account-enumeration oracle.
  */
 const INVALID_CREDENTIALS = 'Invalid email or password.';
+
+/**
+ * Shown for every email once its attempts run out, whether or not an account
+ * exists, so it reveals nothing more than INVALID_CREDENTIALS does.
+ */
+function tooManyAttempts(retryAt: Date): string {
+  const minutes = Math.max(1, Math.ceil((retryAt.getTime() - Date.now()) / 60_000));
+  return `Too many sign-in attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+}
 
 const loginSchema = z.object({
   email: z.email().max(254),
@@ -40,6 +50,12 @@ export async function loginAction(
     return { error: INVALID_CREDENTIALS };
   }
 
+  // Reserved before any password check, so the limit holds under parallel guesses.
+  const reservation = await reserveLoginAttempt(db(), parsed.data.email);
+  if (!reservation.allowed) {
+    return { error: tooManyAttempts(reservation.retryAt) };
+  }
+
   const user = await findUserByEmail(db(), parsed.data.email);
 
   if (!user) {
@@ -58,6 +74,7 @@ export async function loginAction(
     return { error: INVALID_CREDENTIALS };
   }
 
+  await clearLoginAttempts(db(), parsed.data.email);
   const session = await createSession(db(), user.id);
   await setSessionCookie(session.token, session.expiresAt);
 
