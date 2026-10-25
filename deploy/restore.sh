@@ -172,7 +172,7 @@ drop_db() {
 }
 
 # Undoes the swap and starts the CRM on its old database again. Called from the ERR trap.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 put_back() {
   trap - ERR
   systemctl stop "$SERVICE" || true
