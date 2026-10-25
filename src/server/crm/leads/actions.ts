@@ -25,6 +25,7 @@ import {
   type LinkLeadAccountResult,
 } from './service';
 import {
+  DuplicateOpenLeadError,
   LeadNotFoundError,
   LeadForbiddenError,
   InvalidLeadStatusTransitionError,
@@ -190,6 +191,7 @@ export async function restoreLeadAction(leadId: string): Promise<{ ok: true; lea
   } catch (error) {
     if (error instanceof LeadNotFoundError) return { ok: false, error: 'NOT_FOUND', message: error.message };
     if (error instanceof LeadForbiddenError) return { ok: false, error: 'FORBIDDEN', message: error.message };
+    if (error instanceof DuplicateOpenLeadError) return { ok: false, error: 'DUPLICATE_LEAD', message: error.message };
     throw error;
   }
 }

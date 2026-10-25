@@ -276,6 +276,23 @@ Structural facts worth knowing without opening the migrations:
 | `crm_session_token_hash_unique` | Two sessions sharing a token. |
 | `crm_session_expiry_after_creation` — `expires_at > created_at` | A session with a zero-length or negative lifetime. Immediate invalidation is `revoked_at`'s job; an expired session is a *historical* one whose window has passed, not one that never opened. |
 
+### One open lead per contact
+
+A contact may have at most one **open** lead: status `NEW` or `CONTACTED`, not
+archived, and not yet converted to an opportunity. `captureLeadUseCase` refuses a
+second one with `DUPLICATE_LEAD`, and `restoreLead` refuses to un-archive an open
+lead beside a newer one (`DuplicateOpenLeadError`). The refusal names the owner of
+the existing lead; it links to that lead only for someone allowed to open it.
+Rows that already exist are left as they are.
+
+This cannot be a partial unique index: conversion lives on `crm_opportunity`, so
+a converted lead keeps its `NEW`/`CONTACTED` status and the predicate needs a
+join. Instead both writes run in a transaction that first takes
+`pg_advisory_xact_lock` on the contact (`lockContactLeads`), then checks. Two
+simultaneous captures for one contact therefore serialise and only one lands.
+`createLead` itself stays a low-level primitive without the check, for seeds and
+tests.
+
 `gen_random_uuid()` is built into PostgreSQL 13+, so no extension is required.
 
 Role is `text` + `CHECK` rather than a PostgreSQL `ENUM`: adding a role later is a
