@@ -90,6 +90,7 @@ src/
     auth/
       password.ts            argon2id hashing
       session.ts             Opaque session mint / resolve / revoke
+      login-throttle.ts      Per-email sign-in attempt limit
       cookie-name.ts         Cookie name, importable from Proxy
       cookie.ts              'server-only' — cookie read/write
       dal.ts                 'server-only' — THE authorization boundary
@@ -139,11 +140,14 @@ POST /login  (Server Action)
   │
   ├─ zod validates shape
   ├─ email normalised: lower(trim(email))
+  ├─ upsert crm_login_throttle: attempts + 1 (atomic, before any verify)
+  │     └─ over 5 in a 15-minute window → "Too many sign-in attempts"
   ├─ SELECT crm_user WHERE email = $1
   │     └─ not found → verify against a dummy hash, then fail
   ├─ argon2id verify
   ├─ user.is_active checked AFTER verification
   │     └─ all three failures return one identical message
+  ├─ DELETE crm_login_throttle for this email
   ├─ token = randomBytes(32) → base64url          ← never persisted
   ├─ INSERT crm_session (token_hash = sha256(token), expires_at = now + TTL)
   ├─ Set-Cookie: HttpOnly; SameSite=Lax; Secure(prod); Path=/; Expires
@@ -154,6 +158,13 @@ Why a single error message: distinguishing "no such account" from "wrong
 password" from "deactivated" turns the login form into an account-enumeration
 oracle. The dummy-hash verification keeps response times comparable when no
 account exists.
+
+Why throttle per email, counted up front: the attempt is recorded before the
+password is checked, so parallel guesses cannot all see "under the limit".
+Unknown emails are throttled the same way, so a lockout reveals nothing about
+which accounts exist. The trade-off is that anyone can lock a known email out
+for up to 15 minutes; per-IP limits belong at the reverse proxy, where the
+client address can be trusted.
 
 ### Every authenticated request
 
