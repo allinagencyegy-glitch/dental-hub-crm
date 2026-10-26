@@ -27,7 +27,7 @@ import {
   type LinkLeadAccountResult,
 } from './service';
 import { localise, statusFailure } from './messages';
-import type { Lead, LeadDetail, LeadStatus } from './repository';
+import type { Lead, LeadDetail, LeadListCounts, LeadStatus } from './repository';
 
 const MAX_CLINIC_NAME = 200;
 
@@ -67,7 +67,7 @@ export async function captureLeadAction(input: CaptureLeadInput): Promise<Captur
  * `search` matches contact name, phone, email, account, source, campaign,
  * category, owner and the lead reference.
  */
-export async function listLeadsAction(options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number }> {
+export async function listLeadsAction(options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}): Promise<{ leads: Lead[]; total: number; counts: LeadListCounts }> {
   const session = await assertPermission('leads:read');
   const actor: Actor = { userId: session.user.id, role: session.role };
   return listLeadsUseCase(actor, options);

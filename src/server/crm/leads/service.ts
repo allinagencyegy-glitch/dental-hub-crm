@@ -23,6 +23,7 @@ import {
   type Lead,
   type LeadDetail,
   type LeadStatus,
+  type LeadListCounts,
 } from './repository';
 import {
   createAccount,
@@ -197,7 +198,7 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
   }
 }
 
-export async function listLeadsUseCase(actor: Actor, options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}, db?: Db): Promise<{ leads: Lead[]; total: number }> {
+export async function listLeadsUseCase(actor: Actor, options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {}, db?: Db): Promise<{ leads: Lead[]; total: number; counts: LeadListCounts }> {
   const database = getDb(db);
   return listLeads(database, { userId: actor.userId, role: actor.role }, options);
 }

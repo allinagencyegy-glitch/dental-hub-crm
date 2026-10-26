@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Avatar, Badge, PageHeader, Toolbar } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
-import type { Lead, LeadStatus } from '@/server/crm/leads/repository';
+import type { Lead, LeadListCounts, LeadStatus } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
 import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
@@ -13,6 +13,7 @@ import { catalogLabel } from '@/i18n/format';
 interface LeadsListProps {
   leads: Lead[];
   total: number;
+  counts: LeadListCounts;
   page: number;
   limit: number;
   status?: LeadStatus;
@@ -24,7 +25,7 @@ const STATUS_FILTERS: (LeadStatus | 'ALL')[] = ['ALL', 'NEW', 'CONTACTED', 'DISQ
 
 const ARCHIVE_FILTERS: ('active' | 'archived' | 'all')[] = ['active', 'archived', 'all'];
 
-export function LeadsList({ leads, total, page, limit, status, archiveFilter = 'active', search = '' }: LeadsListProps) {
+export function LeadsList({ leads, total, counts, page, limit, status, archiveFilter = 'active', search = '' }: LeadsListProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const m = useMessages();
@@ -82,15 +83,9 @@ export function LeadsList({ leads, total, page, limit, status, archiveFilter = '
 
   const totalPages = Math.ceil(total / limit);
 
-  const getStatusCount = (filterStatus: LeadStatus | 'ALL') => {
-    if (filterStatus === 'ALL') return total;
-    return leads.filter((lead) => lead.status === filterStatus).length;
-  };
+  const getStatusCount = (filterStatus: LeadStatus | 'ALL') => format.number(counts.status[filterStatus]);
 
-  const getArchiveCount = (filterArchive: 'active' | 'archived' | 'all') => {
-    if (filterArchive === 'all') return total;
-    return leads.filter((lead) => (filterArchive === 'active') === (lead.archivedAt === null)).length;
-  };
+  const getArchiveCount = (filterArchive: 'active' | 'archived' | 'all') => format.number(counts.archive[filterArchive]);
 
   return (
     <>

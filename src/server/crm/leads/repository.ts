@@ -485,9 +485,21 @@ export async function findLeadById(
   return rows[0] ? toLead(rows[0]) : null;
 }
 
+export type LeadArchiveFilter = 'active' | 'archived' | 'all';
+
+/**
+ * How many leads each list tab holds. A status tab counts within the archive
+ * tab that is open, an archive tab within the status tab that is open, and
+ * both within the actor's row scope and the search.
+ */
+export interface LeadListCounts {
+  status: Record<LeadStatus | 'ALL', number>;
+  archive: Record<LeadArchiveFilter, number>;
+}
+
 /**
  * Lists leads with row-scope authorization, pagination, archive filtering and
- * text search.
+ * text search, plus the counts behind the list's tabs.
  *
  * SALES_REP sees only own leads, SALES_TEAM_LEADER also their team's;
  * SALES_MANAGER/ADMIN see all.
@@ -502,39 +514,21 @@ export async function findLeadById(
 export async function listLeads(
   db: Db,
   actor: { userId: string; role: Role },
-  options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {},
-): Promise<{ leads: Lead[]; total: number }> {
+  options: { status?: LeadStatus; archiveFilter?: LeadArchiveFilter; search?: string; limit?: number; offset?: number } = {},
+): Promise<{ leads: Lead[]; total: number; counts: LeadListCounts }> {
   const { status, archiveFilter = 'active', search, limit = 50, offset = 0 } = options;
 
-  let whereClause = '';
+  // Row scope and search apply to the list and to every tab count alike.
+  const clauses: string[] = [];
   const params: (string | number)[] = [];
 
   const scope = ownerScopeSql(actor, params, ['l.owner_user_id']);
-  if (scope) whereClause = `WHERE ${scope}`;
-
-  // Archive filter
-  const archiveCondition = archiveFilter === 'active' ? 'l.archived_at IS NULL' : archiveFilter === 'archived' ? 'l.archived_at IS NOT NULL' : null;
-  if (archiveCondition) {
-    if (whereClause) {
-      whereClause += ` AND ${archiveCondition}`;
-    } else {
-      whereClause = `WHERE ${archiveCondition}`;
-    }
-  }
-
-  if (status) {
-    if (whereClause) {
-      whereClause += ` AND l.status = $${params.length + 1}`;
-    } else {
-      whereClause = `WHERE l.status = $${params.length + 1}`;
-    }
-    params.push(status);
-  }
+  if (scope) clauses.push(scope);
 
   if (search !== undefined && search.trim() !== '') {
-    const pattern = likePattern(search.trim());
-    const placeholder = `$${params.length + 1}`;
-    const clause = `(
+    params.push(likePattern(search.trim()));
+    const placeholder = `$${params.length}`;
+    clauses.push(`(
       c.full_name ILIKE ${placeholder} ESCAPE '\\'
       OR EXISTS (
         SELECT 1 FROM crm_contact_channel ch
@@ -546,36 +540,54 @@ export async function listLeads(
       OR COALESCE(pc.name, '') ILIKE ${placeholder} ESCAPE '\\'
       OR u.display_name ILIKE ${placeholder} ESCAPE '\\'
       OR l.id::text LIKE ${placeholder} ESCAPE '\\'
-    )`;
-    if (whereClause) {
-      whereClause += ` AND ${clause}`;
-    } else {
-      whereClause = `WHERE ${clause}`;
-    }
-    params.push(pattern);
+    )`);
   }
 
-  const countParams = [...params];
-  const { rows: countRows } = await db.query<{ count: string }>(
-    `SELECT count(*)::text AS count
+  const { rows: groups } = await db.query<{ status: LeadStatus; archived: boolean; count: string }>(
+    `SELECT l.status, l.archived_at IS NOT NULL AS archived, count(*)::text AS count
        FROM crm_lead l
        ${LEAD_LIST_JOINS}
-       ${whereClause}`,
-    countParams,
+       ${clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''}
+      GROUP BY l.status, l.archived_at IS NOT NULL`,
+    params,
   );
-  const total = Number(countRows[0].count);
+  const inArchive = (archived: boolean, filter: LeadArchiveFilter) =>
+    filter === 'all' || archived === (filter === 'archived');
+  const sum = (keep: (group: { status: LeadStatus; archived: boolean }) => boolean) =>
+    groups.filter(keep).reduce((total, group) => total + Number(group.count), 0);
+  const counts: LeadListCounts = {
+    status: {
+      ALL: sum((g) => inArchive(g.archived, archiveFilter)),
+      NEW: sum((g) => g.status === 'NEW' && inArchive(g.archived, archiveFilter)),
+      CONTACTED: sum((g) => g.status === 'CONTACTED' && inArchive(g.archived, archiveFilter)),
+      DISQUALIFIED: sum((g) => g.status === 'DISQUALIFIED' && inArchive(g.archived, archiveFilter)),
+    },
+    archive: {
+      active: sum((g) => (!status || g.status === status) && inArchive(g.archived, 'active')),
+      archived: sum((g) => (!status || g.status === status) && inArchive(g.archived, 'archived')),
+      all: sum((g) => !status || g.status === status),
+    },
+  };
+  const total = status ? counts.status[status] : counts.status.ALL;
+
+  if (archiveFilter === 'active') clauses.push('l.archived_at IS NULL');
+  if (archiveFilter === 'archived') clauses.push('l.archived_at IS NOT NULL');
+  if (status) {
+    params.push(status);
+    clauses.push(`l.status = $${params.length}`);
+  }
 
   params.push(limit, offset);
   const { rows } = await db.query<LeadRow>(
     `SELECT ${LEAD_LIST_COLUMNS}
        FROM crm_lead l
        ${LEAD_LIST_JOINS}
-       ${whereClause}
+       ${clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''}
        ORDER BY l.received_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params,
   );
 
-  return { leads: rows.map(toLead), total };
+  return { leads: rows.map(toLead), total, counts };
 }
 
 /**
