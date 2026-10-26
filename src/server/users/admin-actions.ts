@@ -12,10 +12,12 @@ import type { Messages } from '@/i18n/messages';
 import {
   DuplicateEmailError,
   LastActiveAdminError,
+  TeamAssignmentError,
   createUser,
   resetUserPassword,
   setUserActive,
   setUserRole,
+  setUserTeamLeader,
 } from './repository';
 
 const USERS_PATH = '/crm/settings/users';
@@ -36,6 +38,14 @@ function roleSchema(m: Messages) {
   return z.object({
     userId: z.uuid(m.common.invalidInput),
     role: z.enum(ROLES, m.common.invalidInput),
+  });
+}
+
+function teamSchema(m: Messages) {
+  return z.object({
+    userId: z.uuid(m.common.invalidInput),
+    // An empty choice takes the rep off any team.
+    teamLeaderId: z.union([z.literal('').transform(() => null), z.uuid(m.common.invalidInput)]),
   });
 }
 
@@ -63,6 +73,9 @@ function firstIssue(error: z.ZodError, m: Messages): string {
 function toFormError(error: unknown, m: Messages): AdminFormState {
   if (error instanceof LastActiveAdminError) return { error: m.users.lastActiveAdmin };
   if (error instanceof DuplicateEmailError) return { error: m.users.duplicateEmail };
+  if (error instanceof TeamAssignmentError) {
+    return { error: error.reason === 'NOT_A_REP' ? m.users.teamOnlyForReps : m.users.teamLeaderInvalid };
+  }
   throw error;
 }
 
@@ -108,6 +121,28 @@ export async function changeUserRoleAction(
     const user = await setUserRole(db(), parsed.data.userId, parsed.data.role);
     revalidatePath(USERS_PATH);
     return { success: m.users.roleUpdated(user.displayName) };
+  } catch (error) {
+    return toFormError(error, m);
+  }
+}
+
+export async function setUserTeamLeaderAction(
+  _prevState: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  await assertPermission('users:manage');
+  const m = await getMessages();
+
+  const parsed = teamSchema(m).safeParse({
+    userId: formData.get('userId'),
+    teamLeaderId: formData.get('teamLeaderId'),
+  });
+  if (!parsed.success) return { error: firstIssue(parsed.error, m) };
+
+  try {
+    const user = await setUserTeamLeader(db(), parsed.data.userId, parsed.data.teamLeaderId);
+    revalidatePath(USERS_PATH);
+    return { success: m.users.teamUpdated(user.displayName) };
   } catch (error) {
     return toFormError(error, m);
   }

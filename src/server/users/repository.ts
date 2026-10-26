@@ -12,7 +12,7 @@ import { hashPassword } from '@/server/auth/password';
 import { toPublicUser, type PublicUser, type UserRow } from './dto';
 
 const USER_COLUMNS =
-  'id, display_name, email, password_hash, role, is_active, created_at, updated_at';
+  'id, display_name, email, password_hash, role, team_leader_id, is_active, created_at, updated_at';
 
 /** The one place email normalisation is defined. Mirrored by a DB CHECK. */
 export function normaliseEmail(email: string): string {
@@ -23,6 +23,17 @@ export class LastActiveAdminError extends Error {
   constructor() {
     super('This is the last active admin. Promote or activate another admin first.');
     this.name = 'LastActiveAdminError';
+  }
+}
+
+export class TeamAssignmentError extends Error {
+  constructor(readonly reason: 'NOT_A_REP' | 'NOT_A_TEAM_LEADER') {
+    super(
+      reason === 'NOT_A_REP'
+        ? 'Only a sales rep joins a team.'
+        : 'The team leader must be an active team leader.',
+    );
+    this.name = 'TeamAssignmentError';
   }
 }
 
@@ -148,15 +159,78 @@ async function withLastAdminGuard<T>(db: Db, work: (tx: Db) => Promise<T>): Prom
   }
 }
 
+/**
+ * Changes a user's role. Only a rep sits on a team, so a user who stops being
+ * a rep leaves theirs, and a team leader who stops leading leaves their reps
+ * without a team - in the same transaction, so no rep is ever left pointing at
+ * someone who no longer leads.
+ */
 export async function setUserRole(db: Db, id: string, role: Role): Promise<PublicUser> {
   return withLastAdminGuard(db, async (tx) => {
     const { rows } = await tx.query<UserRow>(
-      `UPDATE crm_user SET role = $2, updated_at = now() WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+      `UPDATE crm_user
+          SET role = $2,
+              team_leader_id = CASE WHEN $2::text = 'SALES_REP' THEN team_leader_id END,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING ${USER_COLUMNS}`,
       [id, role],
     );
     if (!rows[0]) throw new Error('User not found.');
+    if (role !== 'SALES_TEAM_LEADER') {
+      await tx.query(
+        'UPDATE crm_user SET team_leader_id = NULL, updated_at = now() WHERE team_leader_id = $1',
+        [id],
+      );
+    }
     return toPublicUser(rows[0]);
   });
+}
+
+/**
+ * Puts a rep on a team leader's team, or takes them off any team with null.
+ *
+ * The leader's row is share-locked while it is checked, so a concurrent role
+ * change of that leader either waits for this assignment and then clears it,
+ * or commits first and makes this check fail.
+ */
+export async function setUserTeamLeader(
+  db: Db,
+  id: string,
+  teamLeaderId: string | null,
+): Promise<PublicUser> {
+  const { client, release } = await beginTransaction(db);
+  try {
+    const { rows: users } = await client.query<{ role: Role }>(
+      'SELECT role FROM crm_user WHERE id = $1 FOR UPDATE',
+      [id],
+    );
+    if (!users[0]) throw new Error('User not found.');
+    if (users[0].role !== 'SALES_REP') throw new TeamAssignmentError('NOT_A_REP');
+
+    if (teamLeaderId !== null) {
+      const { rows: leaders } = await client.query<{ role: Role; is_active: boolean }>(
+        'SELECT role, is_active FROM crm_user WHERE id = $1 FOR SHARE',
+        [teamLeaderId],
+      );
+      if (!leaders[0] || leaders[0].role !== 'SALES_TEAM_LEADER' || !leaders[0].is_active) {
+        throw new TeamAssignmentError('NOT_A_TEAM_LEADER');
+      }
+    }
+
+    const { rows } = await client.query<UserRow>(
+      `UPDATE crm_user SET team_leader_id = $2, updated_at = now() WHERE id = $1
+       RETURNING ${USER_COLUMNS}`,
+      [id, teamLeaderId],
+    );
+    await commitTransaction(client);
+    return toPublicUser(rows[0]);
+  } catch (error) {
+    await rollbackTransaction(client);
+    throw error;
+  } finally {
+    release();
+  }
 }
 
 export async function setUserActive(db: Db, id: string, isActive: boolean): Promise<PublicUser> {

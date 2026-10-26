@@ -597,11 +597,15 @@ describe('Application Service - catalog actions', () => {
     expect(reasons.every((r) => r.id && r.code && r.label && typeof r.requiresNote === 'boolean')).toBe(true);
   });
 
-  it('getAssignableOwnersUseCase returns only active SALES_REP and SALES_MANAGER', async () => {
-    const owners = await getAssignableOwnersUseCase(db);
+  it('getAssignableOwnersUseCase gives a manager every active selling user and no admin', async () => {
+    const owners = await getAssignableOwnersUseCase(managerActor, db);
     expect(Array.isArray(owners)).toBe(true);
     expect(owners.length).toBeGreaterThan(0);
-    expect(owners.every((o) => o.id && o.displayName && o.email && ['SALES_REP', 'SALES_MANAGER'].includes(o.role))).toBe(true);
+    expect(
+      owners.every(
+        (o) => o.id && o.displayName && o.email && ['SALES_REP', 'SALES_TEAM_LEADER', 'SALES_MANAGER'].includes(o.role),
+      ),
+    ).toBe(true);
     expect(owners.some((o) => o.id === inactiveRepUser.id)).toBe(false);
     expect(owners.some((o) => o.id === adminUser.id)).toBe(false);
   });

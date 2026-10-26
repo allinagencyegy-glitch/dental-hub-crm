@@ -3,6 +3,7 @@ import { getMessages } from '@/i18n/server';
 import { getPipelineBoardAction, getSourceOptionsAction } from '@/server/crm/dashboard/actions';
 import { getOpportunityOwnersAction } from '@/server/crm/opportunities/actions';
 import { PipelineBoard } from './PipelineBoard';
+import { canAssignOwner } from '@/server/authz/permissions';
 
 export async function generateMetadata() {
   const m = await getMessages();
@@ -11,7 +12,7 @@ export async function generateMetadata() {
 
 async function getPipelineData() {
   const session = await requirePermission('opportunities:read');
-  const canFilterOwner = session.role === 'ADMIN' || session.role === 'SALES_MANAGER';
+  const canFilterOwner = canAssignOwner(session.role);
 
   const [board, ownerOptions, sourceOptions] = await Promise.all([
     getPipelineBoardAction(),

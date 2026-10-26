@@ -11,8 +11,8 @@ import type { DashboardPayload } from '@/server/crm/dashboard/service';
 import { OPPORTUNITY_STAGES } from '@/server/crm/opportunities/stage';
 import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
+import { canAssignOwner, isRole, type Role } from '@/server/authz/permissions';
 
-type Role = 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
 
 interface DashboardHomeProps {
   initial: DashboardPayload;
@@ -47,7 +47,7 @@ export function DashboardHome({
   const formatEgp = f.currency;
   const formatCount = f.number;
 
-  const canFilterOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
+  const canFilterOwner = canAssignOwner(userRole);
 
   const reload = async (next: {
     range: DashboardRange;
@@ -397,7 +397,7 @@ export function DashboardHome({
                   <tr key={row.userId}>
                     <td className="px-5 py-3">
                       <p className="text-[11px] font-semibold text-[#33414a]">{row.displayName}</p>
-                      <p className="text-[9px] text-[#98a2a9]">{m.roles[row.role === 'SALES_MANAGER' ? 'SALES_MANAGER' : 'SALES_REP']}</p>
+                      <p className="text-[9px] text-[#98a2a9]">{m.roles[isRole(row.role) ? row.role : 'SALES_REP']}</p>
                     </td>
                     <Cell value={formatCount(row.activeLeads)} />
                     <Cell value={formatCount(row.newLeads)} />

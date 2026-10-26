@@ -15,8 +15,9 @@
  *   - If they resolve to DIFFERENT contacts: IdentityConflictError
  *   - Concurrent creation: handle unique violation, re-query, return canonical
  *
- * Row-scope authorization is enforced at the query layer: SALES_REP sees only
- * own leads; SALES_MANAGER/ADMIN see all.
+ * Row-scope authorization is enforced at the query layer (see crm/scope.ts):
+ * SALES_REP sees only own leads, SALES_TEAM_LEADER also their team's;
+ * SALES_MANAGER/ADMIN see all.
  */
 import type { Db } from '@/server/db/types';
 import { Pool, PoolClient } from 'pg';
@@ -31,6 +32,8 @@ import { listAccountsForContact } from '@/server/crm/accounts/repository';
 // qualification), so its reassignment hand-off reuses that module rather than
 // duplicating the table's rules here.
 import { reassignPendingLeadFollowUps } from '@/server/crm/opportunities/followups';
+import type { Role } from '@/server/authz/permissions';
+import { checkAssignableOwner, ownerScopeSql } from '@/server/crm/scope';
 
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'DISQUALIFIED';
 
@@ -460,21 +463,19 @@ export async function createLead(
 
 /**
  * Finds a lead by ID with row-scope authorization.
- * SALES_REP can only access leads they own.
- * SALES_MANAGER/ADMIN can access all leads.
+ * SALES_REP can only access leads they own, SALES_TEAM_LEADER also their
+ * team's. SALES_MANAGER/ADMIN can access all leads.
  */
 export async function findLeadById(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Lead | null> {
   let whereClause = 'WHERE l.id = $1';
-  const params: (string | string[]) = [leadId];
+  const params: string[] = [leadId];
 
-  if (actor.role === 'SALES_REP') {
-    whereClause += ' AND l.owner_user_id = $2';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['l.owner_user_id']);
+  if (scope) whereClause += ` AND ${scope}`;
 
   const { rows } = await db.query<LeadRow>(
     `SELECT ${LEAD_COLUMNS} FROM crm_lead l ${whereClause}`,
@@ -488,7 +489,8 @@ export async function findLeadById(
  * Lists leads with row-scope authorization, pagination, archive filtering and
  * text search.
  *
- * SALES_REP sees only own leads; SALES_MANAGER/ADMIN see all.
+ * SALES_REP sees only own leads, SALES_TEAM_LEADER also their team's;
+ * SALES_MANAGER/ADMIN see all.
  * archiveFilter: 'active' (default, archived_at IS NULL), 'archived'
  * (archived_at IS NOT NULL), 'all' (both).
  *
@@ -499,7 +501,7 @@ export async function findLeadById(
  */
 export async function listLeads(
   db: Db,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   options: { status?: LeadStatus; archiveFilter?: 'active' | 'archived' | 'all'; search?: string; limit?: number; offset?: number } = {},
 ): Promise<{ leads: Lead[]; total: number }> {
   const { status, archiveFilter = 'active', search, limit = 50, offset = 0 } = options;
@@ -507,10 +509,8 @@ export async function listLeads(
   let whereClause = '';
   const params: (string | number)[] = [];
 
-  if (actor.role === 'SALES_REP') {
-    whereClause = 'WHERE l.owner_user_id = $1';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['l.owner_user_id']);
+  if (scope) whereClause = `WHERE ${scope}`;
 
   // Archive filter
   const archiveCondition = archiveFilter === 'active' ? 'l.archived_at IS NULL' : archiveFilter === 'archived' ? 'l.archived_at IS NOT NULL' : null;
@@ -585,7 +585,7 @@ export async function listLeads(
 export async function markLeadContacted(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Lead> {
   const lead = await findLeadById(db, leadId, actor);
   if (!lead) throw new LeadNotFoundError(leadId);
@@ -610,7 +610,7 @@ export async function markLeadContacted(
 export async function disqualifyLead(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   input: { reasonId: string; note?: string | null },
 ): Promise<Lead> {
   const lead = await findLeadById(db, leadId, actor);
@@ -670,7 +670,7 @@ export async function disqualifyLead(
 export async function archiveLead(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Lead> {
   const lead = await findLeadById(db, leadId, actor);
   if (!lead) throw new LeadNotFoundError(leadId);
@@ -702,7 +702,7 @@ export async function archiveLead(
 export async function restoreLead(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Lead> {
   const lead = await findLeadById(db, leadId, actor);
   if (!lead) throw new LeadNotFoundError(leadId);
@@ -751,7 +751,7 @@ export async function restoreLead(
 export async function updateLeadAccount(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   accountId: string,
 ): Promise<Lead> {
   const lead = await findLeadById(db, leadId, actor);
@@ -795,7 +795,7 @@ export interface UpdateLeadInput {
 export async function updateLead(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   input: UpdateLeadInput,
 ): Promise<Lead> {
   // First, verify lead exists and actor has access (row-scope)
@@ -836,20 +836,10 @@ export async function updateLead(
     if (!rows[0].is_active) throw new Error('CATEGORY_NOT_FOUND');
   }
 
-  // Validate owner if provided (only for MANAGER/ADMIN)
+  // Validate owner if provided (manager/admin, or a team leader within their team)
   if (input.ownerUserId !== undefined && input.ownerUserId !== null) {
-    if (actor.role === 'SALES_REP') {
-      throw new Error('UNAUTHORISED');
-    }
-    const { rows } = await db.query<{ id: string; is_active: boolean; role: string }>(
-      `SELECT id, is_active, role FROM crm_user WHERE id = $1`,
-      [input.ownerUserId],
-    );
-    if (!rows[0]) throw new Error('OWNER_NOT_FOUND');
-    if (!rows[0].is_active) throw new Error('OWNER_NOT_FOUND');
-    if (!['SALES_REP', 'SALES_MANAGER'].includes(rows[0].role)) {
-      throw new Error('OWNER_NOT_FOUND');
-    }
+    const check = await checkAssignableOwner(db, actor, input.ownerUserId);
+    if (!check.ok) throw new Error(check.error);
   }
 
   // Handle contact updates if provided
@@ -1126,15 +1116,13 @@ const LEAD_DETAIL_COLUMNS = `
 export async function findLeadDetailById(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<LeadDetail | null> {
   let whereClause = 'WHERE l.id = $1';
-  const params: (string | string[]) = [leadId];
+  const params: string[] = [leadId];
 
-  if (actor.role === 'SALES_REP') {
-    whereClause += ' AND l.owner_user_id = $2';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['l.owner_user_id']);
+  if (scope) whereClause += ` AND ${scope}`;
 
   const { rows } = await db.query<LeadDetailRow>(
     `SELECT ${LEAD_DETAIL_COLUMNS}

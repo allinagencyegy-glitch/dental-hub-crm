@@ -25,6 +25,8 @@ import {
   type FollowUpActionType,
   type FollowUpOutcome,
 } from './followup-actions';
+import type { Role } from '@/server/authz/permissions';
+import { ownerScopeSql } from '@/server/crm/scope';
 
 export interface FollowUp {
   id: string;
@@ -89,7 +91,7 @@ const FOLLOW_UP_COLUMNS_F = `
   f.due_at, f.completed_at, f.outcome, f.created_at, f.updated_at
 `;
 
-type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+type Actor = { userId: string; role: Role };
 
 export class FollowUpNotFoundError extends Error {
   constructor(id: string) {
@@ -467,10 +469,8 @@ export async function findFollowUpById(
   let where = 'WHERE f.id = $1';
   const params: string[] = [followUpId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND (f.owner_user_id = $2 OR o.owner_user_id = $2 OR l.owner_user_id = $2)';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['f.owner_user_id', 'o.owner_user_id', 'l.owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<FollowUpRow>(
     `SELECT ${FOLLOW_UP_COLUMNS_F}
@@ -509,10 +509,8 @@ export async function listFollowUpsForOpportunity(
   let where = 'WHERE f.opportunity_id = $1';
   const params: string[] = [opportunityId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND (f.owner_user_id = $2 OR o.owner_user_id = $2)';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['f.owner_user_id', 'o.owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<FollowUpRow>(
     `SELECT ${FOLLOW_UP_COLUMNS_F}
@@ -535,10 +533,8 @@ export async function listFollowUpsForLead(
   let where = 'WHERE f.lead_id = $1';
   const params: string[] = [leadId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND (f.owner_user_id = $2 OR l.owner_user_id = $2)';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['f.owner_user_id', 'l.owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<FollowUpRow>(
     `SELECT ${FOLLOW_UP_COLUMNS_F}
@@ -587,7 +583,7 @@ const BUSINESS_TIMEZONE = 'Africa/Cairo';
 const START_OF_TOMORROW_CAIRO_SQL = `date_trunc('day', now() + interval '1 day', '${BUSINESS_TIMEZONE}')`;
 
 /**
- * A SALES_REP's row scope for follow-ups.
+ * A SALES_REP's (or a team leader's, team-wide) row scope for follow-ups.
  *
  * A follow-up is scoped to its own assignee OR to the owner of the parent it
  * hangs off, because the two can differ: a manager may assign an action to a
@@ -601,12 +597,8 @@ function pushRepScope(
   params: (string | number | Date)[],
   actor: Actor,
 ): void {
-  if (actor.role !== 'SALES_REP') return;
-  params.push(actor.userId);
-  const placeholder = `$${params.length}`;
-  clauses.push(
-    `(f.owner_user_id = ${placeholder} OR o.owner_user_id = ${placeholder} OR l.owner_user_id = ${placeholder})`,
-  );
+  const scope = ownerScopeSql(actor, params, ['f.owner_user_id', 'o.owner_user_id', 'l.owner_user_id']);
+  if (scope) clauses.push(scope);
 }
 
 /**
@@ -752,12 +744,8 @@ export async function countFollowUpsByWindow(
   actor: Actor,
 ): Promise<{ overdue: number; today: number; upcoming: number; completed: number }> {
   const params: string[] = [];
-  let scope = '';
-
-  if (actor.role === 'SALES_REP') {
-    scope = 'AND (f.owner_user_id = $1 OR o.owner_user_id = $1 OR l.owner_user_id = $1)';
-    params.push(actor.userId);
-  }
+  const ownerScope = ownerScopeSql(actor, params, ['f.owner_user_id', 'o.owner_user_id', 'l.owner_user_id']);
+  const scope = ownerScope ? `AND ${ownerScope}` : '';
 
   const { rows } = await db.query<{
     overdue: string; today: string; upcoming: string; completed: string;

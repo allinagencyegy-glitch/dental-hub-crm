@@ -147,12 +147,12 @@ export async function getDisqualifyReasonsAction(): Promise<{ id: string; code: 
 }
 
 /**
- * Gets assignable owners for lead capture (SALES_REP and SALES_MANAGER who are active).
- * Only available to SALES_MANAGER and ADMIN.
+ * Gets the people the caller may give a lead to: every active owner for a
+ * manager or admin, the team for a team leader, only themselves for a rep.
  */
 export async function getAssignableOwnersAction(): Promise<{ id: string; displayName: string; email: string; role: string }[]> {
-  await assertPermission('leads:write');
-  return getAssignableOwnersUseCase();
+  const session = await assertPermission('leads:write');
+  return getAssignableOwnersUseCase({ userId: session.user.id, role: session.role });
 }
 
 /**

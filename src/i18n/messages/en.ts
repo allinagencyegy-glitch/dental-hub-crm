@@ -44,6 +44,7 @@ export const en = {
   roles: {
     ADMIN: 'Admin',
     SALES_MANAGER: 'Sales Manager',
+    SALES_TEAM_LEADER: 'Team Leader',
     SALES_REP: 'Sales Rep',
   } satisfies Record<Role, string>,
   nav: {
@@ -141,6 +142,13 @@ export const en = {
     passwordTooShort: (count: number) => `Password must be at least ${count} characters.`,
     lastActiveAdmin: 'This is the last active admin. Promote or activate another admin first.',
     duplicateEmail: 'That email address is already in use.',
+    teamFor: (name: string) => `Team leader for ${name}`,
+    noTeam: 'No team',
+    saveTeam: 'Save team',
+    teamOf: (leader: string) => `Team of ${leader}`,
+    teamUpdated: (name: string) => `Updated the team for ${name}.`,
+    teamOnlyForReps: 'Only a sales rep joins a team. Change the role to Sales Rep first.',
+    teamLeaderInvalid: 'Choose an active team leader.',
   },
   leadStatus: {
     NEW: 'New',
@@ -407,8 +415,8 @@ export const en = {
       sourceNotFound: 'That source is not available any more. Choose another.',
       campaignMismatch: 'That campaign is not available for the selected source.',
       categoryNotFound: 'That product category is not available any more. Choose another.',
-      ownerInvalid: 'The owner must be an active Sales Rep or Sales Manager.',
-      repCannotReassign: 'Sales reps cannot change the lead owner.',
+      ownerInvalid: 'The owner must be an active Sales Rep, Team Leader or Sales Manager.',
+      repCannotReassign: 'You cannot give this lead to that person. A rep keeps their own leads, and a team leader assigns only within their team.',
       identityConflict:
         'This phone and this email belong to two different contacts. Use only one of them, or ask a manager to merge the contacts.',
       duplicateLead: (owner: string) =>
@@ -611,9 +619,9 @@ export const en = {
       leadNotFound: 'That lead no longer exists, or you cannot open it.',
       opportunityNotFound: 'That opportunity no longer exists, or you cannot open it.',
       followUpNotFound: 'That follow-up no longer exists, or you cannot open it.',
-      repCannotReassign: 'Sales reps cannot reassign an opportunity.',
-      repCannotAssignFollowUp: 'Sales reps cannot assign follow-ups to others.',
-      ownerInvalid: 'The owner must be an active Sales Rep or Sales Manager.',
+      repCannotReassign: 'You cannot give this opportunity to that person. A rep keeps their own deals, and a team leader assigns only within their team.',
+      repCannotAssignFollowUp: 'You cannot give this follow-up to that person. A rep keeps their own follow-ups, and a team leader assigns only within their team.',
+      ownerInvalid: 'The owner must be an active Sales Rep, Team Leader or Sales Manager.',
       categoryNotFound: 'That product category is not available any more. Choose another.',
       valueNegative: 'Estimated value cannot be negative.',
       unknownStage: 'Unknown opportunity stage.',

@@ -17,6 +17,7 @@ export type UserRow = {
   email: string;
   password_hash: string;
   role: Role;
+  team_leader_id: string | null;
   is_active: boolean;
   created_at: Date;
   updated_at: Date;
@@ -28,6 +29,8 @@ export interface PublicUser {
   displayName: string;
   email: string;
   role: Role;
+  /** The team leader of a rep's team; null for everyone else. */
+  teamLeaderId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -39,6 +42,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     displayName: row.display_name,
     email: row.email,
     role: row.role,
+    teamLeaderId: row.team_leader_id,
     isActive: row.is_active,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),

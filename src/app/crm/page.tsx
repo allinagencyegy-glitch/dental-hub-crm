@@ -6,6 +6,7 @@ import {
 } from '@/server/crm/dashboard/actions';
 import { getOpportunityOwnersAction } from '@/server/crm/opportunities/actions';
 import { DashboardHome } from './DashboardHome';
+import { canAssignOwner } from '@/server/authz/permissions';
 
 export async function generateMetadata() {
   const m = await getMessages();
@@ -15,7 +16,8 @@ export async function generateMetadata() {
 export default async function CrmHomePage() {
   const session = await requirePermission('dashboard:read');
 
-  const isManager = session.role === 'ADMIN' || session.role === 'SALES_MANAGER';
+  // A manager filters by anyone, a team leader by someone on their team.
+  const isManager = canAssignOwner(session.role);
 
   const [payload, sourceOptions, ownerOptions] = await Promise.all([
     getDashboardAction({ range: 'last30' }),

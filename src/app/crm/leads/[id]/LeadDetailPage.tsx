@@ -20,6 +20,7 @@ import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
 import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
+import type { Role } from '@/server/authz/permissions';
 
 interface DisqualifyReason {
   id: string;
@@ -43,7 +44,7 @@ interface LeadDetailPageProps {
   lead: LeadDetail;
   disqualifyReasons: DisqualifyReason[];
   accounts: { id: string; name: string }[];
-  userRole: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
+  userRole: Role;
   userId: string;
   opportunityId: string | null;
   qualifiedAt: Date | null;
