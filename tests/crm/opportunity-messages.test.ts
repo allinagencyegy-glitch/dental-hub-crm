@@ -55,10 +55,12 @@ describe('opportunity failure messages', () => {
     expect(failureMessage('reschedule', 'NOT_FOUND', ar)).toBe(ar.opportunities.errors.followUpNotFound);
   });
 
-  it('tells a rep what they may not do', () => {
-    expect(failureMessage('reassign', 'UNAUTHORISED', en)).toBe('Sales reps cannot reassign an opportunity.');
+  it('tells a rep or a team leader who they may not hand work to', () => {
+    expect(failureMessage('reassign', 'UNAUTHORISED', en)).toBe(
+      'You cannot give this opportunity to that person. A rep keeps their own deals, and a team leader assigns only within their team.',
+    );
     expect(failureMessage('scheduleOnOpportunity', 'UNAUTHORISED', en)).toBe(
-      'Sales reps cannot assign follow-ups to others.',
+      'You cannot give this follow-up to that person. A rep keeps their own follow-ups, and a team leader assigns only within their team.',
     );
   });
 

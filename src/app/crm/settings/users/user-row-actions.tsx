@@ -5,14 +5,27 @@ import {
   changeUserRoleAction,
   resetUserPasswordAction,
   setUserActiveAction,
+  setUserTeamLeaderAction,
 } from '@/server/users/admin-actions';
 import { EMPTY_ADMIN_STATE, MIN_PASSWORD_LENGTH } from '@/server/auth/form-state';
 import { ROLES } from '@/server/authz/permissions';
 import { useMessages } from '@/i18n/I18nProvider';
 import type { PublicUser } from '@/server/users/dto';
 
-export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boolean }) {
+export function UserRowActions({
+  user,
+  isSelf,
+  teamLeaders,
+}: {
+  user: PublicUser;
+  isSelf: boolean;
+  teamLeaders: { id: string; displayName: string }[];
+}) {
   const m = useMessages();
+  const [teamState, teamAction, teamPending] = useActionState(
+    setUserTeamLeaderAction,
+    EMPTY_ADMIN_STATE,
+  );
   const [roleState, roleAction, rolePending] = useActionState(
     changeUserRoleAction,
     EMPTY_ADMIN_STATE,
@@ -26,7 +39,7 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
     EMPTY_ADMIN_STATE,
   );
 
-  const error = roleState.error ?? activeState.error ?? resetState.error;
+  const error = roleState.error ?? teamState.error ?? activeState.error ?? resetState.error;
 
   return (
     <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -56,6 +69,36 @@ export function UserRowActions({ user, isSelf }: { user: PublicUser; isSelf: boo
             {rolePending ? m.common.saving : m.users.saveRole}
           </button>
         </form>
+
+        {/* Only a rep sits on a team. */}
+        {user.role === 'SALES_REP' ? (
+          <form action={teamAction} className="flex items-center gap-2">
+            <input type="hidden" name="userId" value={user.id} />
+            <label htmlFor={`team-${user.id}`} className="sr-only">
+              {m.users.teamFor(user.displayName)}
+            </label>
+            <select
+              id={`team-${user.id}`}
+              name="teamLeaderId"
+              defaultValue={user.teamLeaderId ?? ''}
+              className="h-8 rounded-lg border border-[#dfe4e7] bg-white px-2 text-[11px] text-[#17242c] outline-none focus:border-[#18b6a4]"
+            >
+              <option value="">{m.users.noTeam}</option>
+              {teamLeaders.map((leader) => (
+                <option key={leader.id} value={leader.id}>
+                  {m.users.teamOf(leader.displayName)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={teamPending}
+              className="h-8 rounded-lg border border-[#dce2e5] bg-white px-2.5 text-[11px] font-semibold text-[#53616b] transition hover:bg-[#f7f9fa] disabled:opacity-50"
+            >
+              {teamPending ? m.common.saving : m.users.saveTeam}
+            </button>
+          </form>
+        ) : null}
 
         <form action={activeAction}>
           <input type="hidden" name="userId" value={user.id} />

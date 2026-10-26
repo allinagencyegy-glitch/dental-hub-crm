@@ -55,9 +55,10 @@ export async function notify(db: Db, input: NotificationInput): Promise<void> {
 }
 
 /**
- * Tells every active manager and admin that a lead arrived, except the person
- * who entered it and the lead's owner: the owner hears that the lead is theirs
- * (LEAD_ASSIGNED) instead, so nobody gets two notices for one lead.
+ * Tells every active manager and admin that a lead arrived - and the owner's
+ * team leader, when the owner is on a team - except the person who entered it
+ * and the lead's owner: the owner hears that the lead is theirs (LEAD_ASSIGNED)
+ * instead, so nobody gets two notices for one lead.
  */
 export async function notifyLeadReceived(
   db: Db,
@@ -68,7 +69,10 @@ export async function notifyLeadReceived(
      SELECT u.id, 'LEAD_RECEIVED', $2::uuid, $1
        FROM crm_user u
       WHERE u.is_active
-        AND u.role IN ('ADMIN', 'SALES_MANAGER')
+        AND (
+          u.role IN ('ADMIN', 'SALES_MANAGER')
+          OR u.id = (SELECT owner.team_leader_id FROM crm_user owner WHERE owner.id = $3)
+        )
         AND u.id <> $3
         AND u.id IS DISTINCT FROM $2::uuid`,
     [input.leadId, input.actorUserId, input.ownerUserId],

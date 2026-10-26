@@ -31,8 +31,8 @@ describe('role permissions', () => {
     }
   });
 
-  it('defines exactly the three foundation roles', () => {
-    expect([...ROLES]).toEqual(['ADMIN', 'SALES_MANAGER', 'SALES_REP']);
+  it('defines exactly the foundation roles plus the sales team leader', () => {
+    expect([...ROLES]).toEqual(['ADMIN', 'SALES_MANAGER', 'SALES_TEAM_LEADER', 'SALES_REP']);
     expect(isRole('ADMIN')).toBe(true);
     expect(isRole('SUPER_ADMIN')).toBe(false);
     expect(isRole(undefined)).toBe(false);

@@ -289,6 +289,6 @@ export async function getLostReasonsAction(): Promise<
 export async function getOpportunityOwnersAction(): Promise<
   { id: string; displayName: string; role: string }[]
 > {
-  await assertPermission('opportunities:read');
-  return getOpportunityOwnersUseCase();
+  const session = await assertPermission('opportunities:read');
+  return getOpportunityOwnersUseCase({ userId: session.user.id, role: session.role });
 }

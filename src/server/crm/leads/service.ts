@@ -31,7 +31,8 @@ import {
 import { beginTransaction, commitTransaction, rollbackTransaction } from '@/server/db/transaction';
 import { notify, notifyLeadReceived } from '@/server/crm/notifications/repository';
 import { findSourceByCode, listSourceCampaigns, findProductCategoryByCode, listProductCategories, listSources } from '@/server/crm/catalog/repository';
-import { findUserById, listUsers } from '@/server/users/repository';
+import type { Role } from '@/server/authz/permissions';
+import { checkAssignableOwner, listAssignableOwners } from '@/server/crm/scope';
 
 function getDb(db?: Db): Db {
   return db ?? defaultDb();
@@ -61,7 +62,15 @@ export type CaptureLeadResult =
       existingOwnerName?: string;
     };
 
-export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+export type Actor = { userId: string; role: Role };
+
+function ownerFailure<E extends 'UNAUTHORISED' | 'OWNER_NOT_FOUND'>(
+  error: E,
+): { ok: false; error: E; message: string } {
+  return error === 'UNAUTHORISED'
+    ? { ok: false, error, message: 'You cannot give this lead to that person.' }
+    : { ok: false, error, message: 'Owner must be an active Sales Rep, Team Leader or Sales Manager.' };
+}
 
 export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, db?: Db): Promise<CaptureLeadResult> {
   const database = getDb(db);
@@ -99,14 +108,9 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
     ownerUserId = actor.userId;
   } else {
     if (input.ownerUserId) {
-      const owner = await findUserById(database, input.ownerUserId);
-      if (!owner || !owner.is_active) {
-        return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
-      }
-      if (!['SALES_REP', 'SALES_MANAGER'].includes(owner.role)) {
-        return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
-      }
-      ownerUserId = owner.id;
+      const check = await checkAssignableOwner(database, actor, input.ownerUserId);
+      if (!check.ok) return ownerFailure(check.error);
+      ownerUserId = check.owner.id;
     } else {
       ownerUserId = actor.userId;
     }
@@ -156,7 +160,8 @@ export async function captureLeadUseCase(actor: Actor, input: CaptureLeadInput, 
     } catch (error) {
       if (!(error instanceof DuplicateOpenLeadError)) throw error;
       await client.query('ROLLBACK');
-      const mayOpen = actor.role !== 'SALES_REP' || error.ownerUserId === actor.userId;
+      // Only link to the existing lead when the actor could open it anyway.
+      const mayOpen = (await findLeadById(client, error.existingLeadId, actor)) !== null;
       return {
         ok: false,
         error: 'DUPLICATE_LEAD',
@@ -246,12 +251,12 @@ export async function getDisqualifyReasonsUseCase(db?: Db): Promise<{ id: string
   return rows.map((r) => ({ id: r.id, code: r.code, label: r.label, requiresNote: r.requires_note }));
 }
 
-export async function getAssignableOwnersUseCase(db?: Db): Promise<{ id: string; displayName: string; email: string; role: string }[]> {
-  const database = getDb(db);
-  const users = await listUsers(database);
-  return users
-    .filter((u) => u.isActive && ['SALES_REP', 'SALES_MANAGER'].includes(u.role))
-    .map((u) => ({ id: u.id, displayName: u.displayName, email: u.email, role: u.role }));
+/** Who the actor may give a lead to: everyone for a manager, the team for a team leader. */
+export async function getAssignableOwnersUseCase(
+  actor: Actor,
+  db?: Db,
+): Promise<{ id: string; displayName: string; email: string; role: string }[]> {
+  return listAssignableOwners(getDb(db), actor);
 }
 
 export async function archiveLeadUseCase(actor: Actor, leadId: string, db?: Db): Promise<Lead> {
@@ -338,19 +343,14 @@ export async function updateLeadUseCase(actor: Actor, leadId: string, input: Upd
   let ownerUserId: string | null | undefined = undefined;
   if (input.ownerUserId !== undefined) {
     if (actor.role === 'SALES_REP') {
-      return { ok: false, error: 'UNAUTHORISED', message: 'Sales reps cannot change lead owner.' };
+      return ownerFailure('UNAUTHORISED');
     }
     if (input.ownerUserId === null) {
       ownerUserId = null;
     } else {
-      const owner = await findUserById(database, input.ownerUserId);
-      if (!owner || !owner.is_active) {
-        return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
-      }
-      if (!['SALES_REP', 'SALES_MANAGER'].includes(owner.role)) {
-        return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
-      }
-      ownerUserId = owner.id;
+      const check = await checkAssignableOwner(database, actor, input.ownerUserId);
+      if (!check.ok) return ownerFailure(check.error);
+      ownerUserId = check.owner.id;
     }
   }
 

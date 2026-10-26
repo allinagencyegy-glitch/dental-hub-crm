@@ -31,8 +31,8 @@ import type { QuotationListItem } from '@/server/crm/quotations/repository';
 import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
 import { activityTitle } from '@/i18n/activity';
+import type { Role } from '@/server/authz/permissions';
 
-type Role = 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
 
 interface OpportunityDetailProps {
   opportunity: OpportunityDetailData;

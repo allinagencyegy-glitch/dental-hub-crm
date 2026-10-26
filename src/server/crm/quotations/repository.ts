@@ -12,7 +12,8 @@
  *     opportunity is WON or LOST its quotations are frozen;
  *   * nothing here ever deletes a quotation.
  *
- * Row scope: SALES_REP sees only quotations whose opportunity they own. A row
+ * Row scope: SALES_REP sees only quotations whose opportunity they own (a team
+ * leader also their team's, see crm/scope.ts). A row
  * outside the actor's scope reads as absent, so an unauthorised lookup cannot
  * be used to discover that a record exists.
  */
@@ -30,8 +31,10 @@ import {
   isQuotationStatus,
   type QuotationStatus,
 } from './status';
+import type { Role } from '@/server/authz/permissions';
+import { ownerScopeSql } from '@/server/crm/scope';
 
-export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+export type Actor = { userId: string; role: Role };
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -313,15 +316,14 @@ export function quantity(value: number): string {
   return Number(value).toFixed(2);
 }
 
-/** Appends the SALES_REP row-scope clause. `o` is the crm_opportunity alias. */
+/** Appends the rep / team leader row-scope clause. `o` is the crm_opportunity alias. */
 function pushScope(
   clauses: string[],
   params: (string | number | Date | null)[],
   actor: Actor,
 ): void {
-  if (actor.role !== 'SALES_REP') return;
-  params.push(actor.userId);
-  clauses.push(`o.owner_user_id = $${params.length}`);
+  const scope = ownerScopeSql(actor, params, ['o.owner_user_id']);
+  if (scope) clauses.push(scope);
 }
 
 /** Generates the next unique, human-readable quotation number. */

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { updateLeadAction } from '@/server/crm/leads/actions';
-import { isRole } from '@/server/authz/permissions';
+import { canAssignOwner, isRole, type Role } from '@/server/authz/permissions';
 import { useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
 import type { LeadDetail } from '@/server/crm/leads/repository';
@@ -15,7 +15,7 @@ interface LeadEditFormProps {
   lead: LeadDetail;
   catalog: { sources: SourceOption[]; productCategories: ProductCategoryOption[] };
   assignableOwners: AssignableOwner[];
-  userRole: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
+  userRole: Role;
   userId: string;
 }
 
@@ -23,7 +23,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
   const router = useRouter();
   const m = useMessages();
   const t = m.leads.edit;
-  const canAssignOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
+  const mayAssignOwner = canAssignOwner(userRole);
 
   const [formData, setFormData] = useState({
     sourceCode: lead.sourceCode || '',
@@ -103,7 +103,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
         campaignCode: formData.campaignCode || null,
         productCategoryCode: formData.productCategoryCode || null,
         note: formData.note.trim() || null,
-        ownerUserId: canAssignOwner ? (formData.ownerUserId || null) : undefined,
+        ownerUserId: mayAssignOwner ? (formData.ownerUserId || null) : undefined,
         contact: {
           fullName: formData.contact.fullName.trim(),
           phone: formData.contact.phone.trim() || null,
@@ -283,7 +283,7 @@ export function LeadEditForm({ lead, catalog, assignableOwners, userRole }: Lead
             </div>
           </div>
 
-          {canAssignOwner && (
+          {mayAssignOwner && (
             <div>
               <label htmlFor="ownerUserId" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
                 {m.leads.owner}

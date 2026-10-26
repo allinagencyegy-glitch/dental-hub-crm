@@ -76,7 +76,7 @@ export async function resolveSession(db: Db, token: string): Promise<Authenticat
     `SELECT s.id AS session_id,
             s.expires_at AS session_expires_at,
             u.id, u.display_name, u.email, u.password_hash,
-            u.role, u.is_active, u.created_at, u.updated_at
+            u.role, u.team_leader_id, u.is_active, u.created_at, u.updated_at
        FROM crm_session s
        JOIN crm_user u ON u.id = s.user_id
       WHERE s.token_hash = $1

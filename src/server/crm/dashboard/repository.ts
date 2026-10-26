@@ -26,8 +26,10 @@ import { rangeClause, type CustomRange, type DashboardRange } from './dates';
 import { OPPORTUNITY_STAGES, type OpportunityStage } from '@/server/crm/opportunities/stage';
 import type { LeadStatus } from '@/server/crm/leads/repository';
 import type { QuotationStatus } from '@/server/crm/quotations/status';
+import type { Role } from '@/server/authz/permissions';
+import { ownerScopeSql } from '@/server/crm/scope';
 
-export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+export type Actor = { userId: string; role: Role };
 
 export interface DashboardFilters {
   range: DashboardRange;
@@ -56,7 +58,9 @@ type Param = string;
 /**
  * Row scope on an owner column. A rep is pinned to themselves no matter what
  * the request carried, so an impersonating owner filter answers with their own
- * book and never leaks; a manager's explicit owner filter narrows the rest.
+ * book and never leaks. A team leader is pinned to their team, and their owner
+ * filter is ANDed with it - asking for someone outside the team answers
+ * nothing. A manager's explicit owner filter narrows the rest.
  */
 function pushOwnerScope(
   clauses: string[],
@@ -65,11 +69,9 @@ function pushOwnerScope(
   ownerUserId?: string | null,
   ownerExpr = 'l.owner_user_id',
 ): void {
-  if (actor.role === 'SALES_REP') {
-    params.push(actor.userId);
-    clauses.push(`${ownerExpr} = $${params.length}`);
-    return;
-  }
+  const scope = ownerScopeSql(actor, params, [ownerExpr]);
+  if (scope) clauses.push(scope);
+  if (actor.role === 'SALES_REP') return;
   if (ownerUserId) {
     params.push(ownerUserId);
     clauses.push(`${ownerExpr} = $${params.length}`);
@@ -127,12 +129,9 @@ function pushFollowUpScope(
   ownerUserId: string | null | undefined,
   sourceId: string | null | undefined,
 ): void {
-  if (actor.role === 'SALES_REP') {
-    params.push(actor.userId);
-    clauses.push(
-      `(f.owner_user_id = $${params.length} OR o.owner_user_id = $${params.length} OR l.owner_user_id = $${params.length})`,
-    );
-  } else if (ownerUserId) {
+  const scope = ownerScopeSql(actor, params, ['f.owner_user_id', 'o.owner_user_id', 'l.owner_user_id']);
+  if (scope) clauses.push(scope);
+  if (actor.role !== 'SALES_REP' && ownerUserId) {
     params.push(ownerUserId);
     clauses.push(`COALESCE(o.owner_user_id, l.owner_user_id) = $${params.length}`);
   }
@@ -582,11 +581,13 @@ export async function getSalesRepPerformance(
   // row's own owner, so pinning the outer u.id is enough to narrow the table to
   // one person's book. Source scope is applied inside each CTE because a source
   // belongs to the lead behind the row, not to the row's owner.
-  const scopeClauses: string[] = ['u.is_active = true', `u.role IN ('SALES_REP', 'SALES_MANAGER')`];
-  if (actor.role === 'SALES_REP') {
-    params.push(actor.userId);
-    scopeClauses.push(`u.id = $${params.length}`);
-  } else if (ownerUserId) {
+  const scopeClauses: string[] = [
+    'u.is_active = true',
+    `u.role IN ('SALES_REP', 'SALES_TEAM_LEADER', 'SALES_MANAGER')`,
+  ];
+  const ownerScope = ownerScopeSql(actor, params, ['u.id']);
+  if (ownerScope) scopeClauses.push(ownerScope);
+  if (actor.role !== 'SALES_REP' && ownerUserId) {
     params.push(ownerUserId);
     scopeClauses.push(`u.id = $${params.length}`);
   }

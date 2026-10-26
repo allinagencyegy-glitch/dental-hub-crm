@@ -18,6 +18,10 @@ export default async function UsersSettingsPage() {
   const users = await listUsers(db());
   const mayManage = can(session.role, 'users:manage');
   const m = await getMessages();
+  const teamLeaders = users
+    .filter((user) => user.role === 'SALES_TEAM_LEADER' && user.isActive)
+    .map((user) => ({ id: user.id, displayName: user.displayName }));
+  const nameById = new Map(users.map((user) => [user.id, user.displayName]));
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -54,10 +58,15 @@ export default async function UsersSettingsPage() {
                 )}
               </p>
               <p className="mt-0.5 truncate text-xs text-[#53616b]">{user.email}</p>
-              <p className="mt-0.5 text-xs text-[#8a959d]">{m.roles[user.role]}</p>
+              <p className="mt-0.5 text-xs text-[#8a959d]">
+                {m.roles[user.role]}
+                {user.teamLeaderId && nameById.has(user.teamLeaderId)
+                  ? ` · ${m.users.teamOf(nameById.get(user.teamLeaderId)!)}`
+                  : null}
+              </p>
             </div>
 
-            {mayManage ? <UserRowActions user={user} isSelf={user.id === session.user.id} /> : null}
+            {mayManage ? <UserRowActions user={user} isSelf={user.id === session.user.id} teamLeaders={teamLeaders} /> : null}
           </li>
         ))}
       </ul>

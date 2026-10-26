@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { captureLeadAction } from '@/server/crm/leads/actions';
-import { isRole } from '@/server/authz/permissions';
+import { canAssignOwner, isRole, type Role } from '@/server/authz/permissions';
 import { useMessages } from '@/i18n/I18nProvider';
 import { catalogLabel } from '@/i18n/format';
 
@@ -38,7 +38,7 @@ interface AssignableOwner {
 interface CaptureLeadFormProps {
   sources: SourceOption[];
   productCategories: ProductCategoryOption[];
-  userRole: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP';
+  userRole: Role;
 }
 
 export function LeadCaptureForm({ sources, productCategories, userRole }: CaptureLeadFormProps) {
@@ -64,11 +64,11 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
   const [existingLeadId, setExistingLeadId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const canAssignOwner = userRole === 'ADMIN' || userRole === 'SALES_MANAGER';
+  const mayAssignOwner = canAssignOwner(userRole);
 
   // Load assignable owners for managers/admins
   useEffect(() => {
-    if (!canAssignOwner) return;
+    if (!mayAssignOwner) return;
 
     const loadOwners = async () => {
       setLoadingOwners(true);
@@ -86,7 +86,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
     };
 
     loadOwners();
-  }, [canAssignOwner]);
+  }, [mayAssignOwner]);
 
   // Load campaigns when source changes
   useEffect(() => {
@@ -323,7 +323,7 @@ export function LeadCaptureForm({ sources, productCategories, userRole }: Captur
             </div>
           </div>
 
-          {canAssignOwner && (
+          {mayAssignOwner && (
             <div>
               <label htmlFor="ownerUserId" className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
                 {m.leads.owner} *

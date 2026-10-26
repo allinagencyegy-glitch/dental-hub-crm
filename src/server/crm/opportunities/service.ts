@@ -14,7 +14,6 @@ import {
   rollbackTransaction,
 } from '@/server/db/transaction';
 import { findLeadById, LeadNotFoundError } from '@/server/crm/leads/repository';
-import { findUserById, listUsers } from '@/server/users/repository';
 import { isOpportunityStage, type OpportunityStage } from './stage';
 import { isFollowUpActionType, isFollowUpOutcome, type FollowUpActionType } from './followup-actions';
 import {
@@ -63,12 +62,14 @@ import {
   type FollowUpListRow,
   type FollowUpWindow,
 } from './followups';
+import type { Role } from '@/server/authz/permissions';
+import { checkAssignableOwner, listAssignableOwners } from '@/server/crm/scope';
 
 function getDb(db?: Db): Db {
   return db ?? defaultDb();
 }
 
-export type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
+export type Actor = { userId: string; role: Role };
 
 export type FailureCode =
   | 'VALIDATION'
@@ -87,6 +88,12 @@ export type FailureCode =
   | 'INTERNAL';
 
 type Failure = { ok: false; error: FailureCode; message: string };
+
+function ownerFailure(error: 'UNAUTHORISED' | 'OWNER_NOT_FOUND', what: 'opportunity' | 'follow-up'): Failure {
+  return error === 'UNAUTHORISED'
+    ? { ok: false, error, message: `You cannot give this ${what} to that person.` }
+    : { ok: false, error, message: 'Owner must be an active Sales Rep, Team Leader or Sales Manager.' };
+}
 
 /**
  * Qualifies a lead into a commercial opportunity.
@@ -145,17 +152,9 @@ export async function qualifyLeadUseCase(
 
   let ownerUserId = lead.ownerUserId;
   if (input.ownerUserId !== undefined && input.ownerUserId !== null) {
-    if (actor.role === 'SALES_REP') {
-      return { ok: false, error: 'UNAUTHORISED', message: 'Sales reps cannot reassign an opportunity.' };
-    }
-    const owner = await findUserById(database, input.ownerUserId);
-    if (!owner || !owner.is_active) {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
-    }
-    if (owner.role !== 'SALES_REP' && owner.role !== 'SALES_MANAGER') {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
-    }
-    ownerUserId = owner.id;
+    const check = await checkAssignableOwner(database, actor, input.ownerUserId);
+    if (!check.ok) return ownerFailure(check.error, 'opportunity');
+    ownerUserId = check.owner.id;
   }
 
   let productCategoryId = lead.productCategoryId;
@@ -464,8 +463,8 @@ export async function reassignOpportunityOwnerUseCase(
     if (error instanceof OpportunityNotFoundError) {
       return { ok: false, error: 'NOT_FOUND', message: error.message };
     }
-    if (error instanceof Error && error.message === 'OWNER_NOT_FOUND') {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found, inactive, or invalid role.' };
+    if (error instanceof Error && (error.message === 'OWNER_NOT_FOUND' || error.message === 'UNAUTHORISED')) {
+      return ownerFailure(error.message, 'opportunity');
     }
     throw error;
   }
@@ -516,17 +515,9 @@ export async function createFollowUpUseCase(
 
   let ownerUserId = opportunity.ownerUserId;
   if (input.ownerUserId !== undefined && input.ownerUserId !== null && input.ownerUserId !== opportunity.ownerUserId) {
-    if (actor.role === 'SALES_REP') {
-      return { ok: false, error: 'UNAUTHORISED', message: 'Sales reps cannot assign follow-ups to others.' };
-    }
-    const owner = await findUserById(database, input.ownerUserId);
-    if (!owner || !owner.is_active) {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
-    }
-    if (owner.role !== 'SALES_REP' && owner.role !== 'SALES_MANAGER') {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
-    }
-    ownerUserId = owner.id;
+    const check = await checkAssignableOwner(database, actor, input.ownerUserId);
+    if (!check.ok) return ownerFailure(check.error, 'follow-up');
+    ownerUserId = check.owner.id;
   }
 
   try {
@@ -595,17 +586,9 @@ export async function createLeadFollowUpUseCase(
 
   let ownerUserId = lead.ownerUserId;
   if (input.ownerUserId !== undefined && input.ownerUserId !== null && input.ownerUserId !== lead.ownerUserId) {
-    if (actor.role === 'SALES_REP') {
-      return { ok: false, error: 'UNAUTHORISED', message: 'Sales reps cannot assign follow-ups to others.' };
-    }
-    const owner = await findUserById(database, input.ownerUserId);
-    if (!owner || !owner.is_active) {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner not found or inactive.' };
-    }
-    if (owner.role !== 'SALES_REP' && owner.role !== 'SALES_MANAGER') {
-      return { ok: false, error: 'OWNER_NOT_FOUND', message: 'Owner must be a Sales Rep or Sales Manager.' };
-    }
-    ownerUserId = owner.id;
+    const check = await checkAssignableOwner(database, actor, input.ownerUserId);
+    if (!check.ok) return ownerFailure(check.error, 'follow-up');
+    ownerUserId = check.owner.id;
   }
 
   try {
@@ -792,14 +775,12 @@ export async function getLostReasonsUseCase(db?: Db): Promise<
   }));
 }
 
-export async function getOpportunityOwnersUseCase(db?: Db): Promise<
+/** Who the actor may give work to or filter by: everyone for a manager, the team for a team leader. */
+export async function getOpportunityOwnersUseCase(actor: Actor, db?: Db): Promise<
   { id: string; displayName: string; role: string }[]
 > {
-  const database = getDb(db);
-  const users = await listUsers(database);
-  return users
-    .filter((user) => user.isActive && (user.role === 'SALES_REP' || user.role === 'SALES_MANAGER'))
-    .map((user) => ({ id: user.id, displayName: user.displayName, role: user.role }));
+  const owners = await listAssignableOwners(getDb(db), actor);
+  return owners.map((owner) => ({ id: owner.id, displayName: owner.displayName, role: owner.role }));
 }
 
 export async function getPipelineCountsUseCase(

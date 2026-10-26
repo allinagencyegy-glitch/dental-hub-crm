@@ -8,6 +8,7 @@ import {
 import { OPPORTUNITY_STAGES } from '@/server/crm/opportunities/stage';
 import type { OpportunityStageFilter } from '@/server/crm/opportunities/repository';
 import { OpportunitiesList } from './OpportunitiesList';
+import { canAssignOwner } from '@/server/authz/permissions';
 
 export async function generateMetadata() {
   const m = await getMessages();
@@ -33,15 +34,16 @@ async function getOpportunitiesData(
 
   const session = await requirePermission('opportunities:read');
 
-  // Only a manager or admin may narrow the view to another rep, so the owner
-  // filter is offered to them alone. A rep always sees their own book.
-  const canAssignOwner = session.role === 'ADMIN' || session.role === 'SALES_MANAGER';
-  const ownerUserId = canAssignOwner && params.owner ? params.owner : undefined;
+  // A manager or admin may narrow the view to any rep, a team leader to one on
+  // their team, so the owner filter is offered to them alone. A rep always sees
+  // their own book.
+  const mayAssignOwner = canAssignOwner(session.role);
+  const ownerUserId = mayAssignOwner && params.owner ? params.owner : undefined;
 
   const [{ opportunities, total }, counts, owners] = await Promise.all([
     listOpportunitiesAction({ stage, ownerUserId, search, limit, offset }),
     getPipelineCountsAction(),
-    canAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
+    mayAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
   ]);
 
   return {
@@ -53,7 +55,7 @@ async function getOpportunitiesData(
     search,
     counts,
     owners,
-    canAssignOwner,
+    canAssignOwner: mayAssignOwner,
     currentUserId: session.user.id,
   };
 }

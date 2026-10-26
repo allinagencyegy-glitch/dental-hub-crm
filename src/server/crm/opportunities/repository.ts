@@ -2,7 +2,8 @@
  * All SQL touching crm_opportunity.
  *
  * Row-scope authorization is enforced at the query layer, not in the UI:
- * SALES_REP sees only opportunities they own; SALES_MANAGER and ADMIN see all.
+ * SALES_REP sees only opportunities they own, SALES_TEAM_LEADER also their
+ * team's; SALES_MANAGER and ADMIN see all (see crm/scope.ts).
  * A row the actor may not see reads as absent (null / not found), so an
  * unauthorised lookup cannot be used to discover that a record exists.
  */
@@ -20,6 +21,8 @@ import {
   STAGE_LABELS,
   type OpportunityStage,
 } from './stage';
+import type { Role } from '@/server/authz/permissions';
+import { checkAssignableOwner, ownerScopeSql } from '@/server/crm/scope';
 
 export type OpportunityStageFilter = OpportunityStage | 'OPEN' | 'ALL' | 'WON' | 'LOST';
 
@@ -192,15 +195,13 @@ export async function createOpportunity(
 export async function findOpportunityById(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Opportunity | null> {
   let where = 'WHERE id = $1';
   const params: string[] = [opportunityId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND owner_user_id = $2';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<OpportunityRow>(
     `SELECT ${OPPORTUNITY_COLUMNS} FROM crm_opportunity ${where}`,
@@ -213,15 +214,13 @@ export async function findOpportunityById(
 export async function findOpportunityByLeadId(
   db: Db,
   leadId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Opportunity | null> {
   let where = 'WHERE lead_id = $1';
   const params: string[] = [leadId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND owner_user_id = $2';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<OpportunityRow>(
     `SELECT ${OPPORTUNITY_COLUMNS} FROM crm_opportunity ${where}`,
@@ -249,7 +248,7 @@ export interface ListOpportunitiesOptions {
  */
 export async function listOpportunities(
   db: Db,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   options: ListOpportunitiesOptions = {},
 ): Promise<{ opportunities: OpportunityListRow[]; total: number }> {
   const { stage, search, limit = 50, offset = 0 } = options;
@@ -257,14 +256,12 @@ export async function listOpportunities(
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
-  if (actor.role === 'SALES_REP') {
-    params.push(actor.userId);
-    clauses.push(`o.owner_user_id = $${params.length}`);
-  }
+  const scope = ownerScopeSql(actor, params, ['o.owner_user_id']);
+  if (scope) clauses.push(scope);
 
-  // An explicit owner filter is a manager narrowing the team view. A rep asking
-  // for another rep's rows still gets nothing, because the row-scope clause above
-  // is ANDed with this one.
+  // An explicit owner filter is a manager or team leader narrowing the team
+  // view. Asking for rows outside your scope still gets nothing, because the
+  // row-scope clause above is ANDed with this one.
   if (options.ownerUserId) {
     params.push(options.ownerUserId);
     clauses.push(`o.owner_user_id = $${params.length}`);
@@ -436,15 +433,13 @@ type OpportunityDetailRaw = OpportunityRow & {
 export async function findOpportunityDetailById(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<OpportunityDetail | null> {
   let where = 'WHERE o.id = $1';
   const params: string[] = [opportunityId];
 
-  if (actor.role === 'SALES_REP') {
-    where += ' AND o.owner_user_id = $2';
-    params.push(actor.userId);
-  }
+  const scope = ownerScopeSql(actor, params, ['o.owner_user_id']);
+  if (scope) where += ` AND ${scope}`;
 
   const { rows } = await db.query<OpportunityDetailRaw>(
     `SELECT
@@ -526,7 +521,7 @@ export interface ChangeStageInput {
 export async function changeOpportunityStage(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   input: ChangeStageInput,
 ): Promise<Opportunity> {
   // The stage write and its history row must land together: a transition that
@@ -729,7 +724,7 @@ type OpportunityActivityRow = {
 export async function listOpportunityActivity(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<OpportunityActivityEntry[]> {
   const opportunity = await findOpportunityById(db, opportunityId, actor);
   if (!opportunity) return [];
@@ -760,7 +755,7 @@ export async function listOpportunityActivity(
 export async function listStageHistory(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<StageHistoryEntry[]> {
   // Authorise against the opportunity first: history must not outlive the
   // row-scope rules, or a rep could read a colleague's deal timeline by id.
@@ -808,7 +803,7 @@ export interface UpdateOpportunityInput {
 export async function updateOpportunity(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   input: UpdateOpportunityInput,
 ): Promise<Opportunity> {
   const existing = await findOpportunityById(db, opportunityId, actor);
@@ -869,14 +864,14 @@ export async function updateOpportunity(
 /**
  * Reassigns an opportunity's owner.
  *
- * Manager/admin only. The new owner must be an active SALES_REP or
- * SALES_MANAGER - the same rule lead ownership already uses, so an admin or a
- * finance user can never become a sales owner.
+ * Manager/admin, or a team leader within their team. The new owner must be an
+ * active selling user - the same rule lead ownership already uses, so an admin
+ * or a finance user can never become a sales owner.
  */
 export async function reassignOpportunityOwner(
   db: Db,
   opportunityId: string,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
   newOwnerUserId: string,
 ): Promise<Opportunity> {
   if (actor.role === 'SALES_REP') {
@@ -886,15 +881,9 @@ export async function reassignOpportunityOwner(
   const existing = await findOpportunityById(db, opportunityId, actor);
   if (!existing) throw new OpportunityNotFoundError(opportunityId);
 
-  const { rows: ownerRows } = await db.query<{ id: string; is_active: boolean; role: string; display_name: string }>(
-    `SELECT id, is_active, role, display_name FROM crm_user WHERE id = $1`,
-    [newOwnerUserId],
-  );
-  const owner = ownerRows[0];
-  if (!owner || !owner.is_active) throw new Error('OWNER_NOT_FOUND');
-  if (owner.role !== 'SALES_REP' && owner.role !== 'SALES_MANAGER') {
-    throw new Error('OWNER_NOT_FOUND');
-  }
+  const check = await checkAssignableOwner(db, actor, newOwnerUserId);
+  if (!check.ok) throw new Error(check.error);
+  const owner = check.owner;
 
   const { rows } = await db.query<OpportunityRow>(
     `UPDATE crm_opportunity SET owner_user_id = $2, updated_at = now()
@@ -929,15 +918,11 @@ export async function reassignOpportunityOwner(
 /** Stage counts for the pipeline header. Not a dashboard - just a row tally. */
 export async function countOpportunitiesByStage(
   db: Db,
-  actor: { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' },
+  actor: { userId: string; role: Role },
 ): Promise<Record<string, number>> {
   const params: string[] = [];
-  let where = '';
-
-  if (actor.role === 'SALES_REP') {
-    params.push(actor.userId);
-    where = 'WHERE owner_user_id = $1';
-  }
+  const scope = ownerScopeSql(actor, params, ['owner_user_id']);
+  const where = scope ? `WHERE ${scope}` : '';
 
   const { rows } = await db.query<{ stage: string; count: string }>(
     `SELECT stage, count(*)::text AS count FROM crm_opportunity ${where} GROUP BY stage`,

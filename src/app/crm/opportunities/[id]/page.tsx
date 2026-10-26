@@ -12,6 +12,7 @@ import {
 import { listQuotationsAction } from '@/server/crm/quotations/actions';
 import { allowedTransitions, isTerminalStage } from '@/server/crm/opportunities/stage';
 import { OpportunityDetail } from './OpportunityDetail';
+import { canAssignOwner } from '@/server/authz/permissions';
 
 export async function generateMetadata() {
   const m = await getMessages();
@@ -30,12 +31,12 @@ async function getOpportunityData(id: string) {
   // 404s exactly like a non-existent one. No existence leak.
   if (!opportunity) notFound();
 
-  const canAssignOwner = session.role === 'ADMIN' || session.role === 'SALES_MANAGER';
+  const mayAssignOwner = canAssignOwner(session.role);
 
   const [followUps, lostReasons, owners, stageHistory, activity, quotations] = await Promise.all([
     listOpportunityFollowUpsAction(id),
     getLostReasonsAction(),
-    canAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
+    mayAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
     getOpportunityStageHistoryAction(id),
     getOpportunityActivityAction(id),
     listQuotationsAction(id),
@@ -49,7 +50,7 @@ async function getOpportunityData(id: string) {
     stageHistory,
     activity,
     quotations,
-    canAssignOwner,
+    canAssignOwner: mayAssignOwner,
     userRole: session.role,
     userId: session.user.id,
     allowedStages: allowedTransitions(opportunity.stage),
