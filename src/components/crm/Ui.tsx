@@ -97,6 +97,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
 }
 
 
-export function InfoLine({ icon, label, value }: { icon: CrmIconName; label: string; value: string }) {
-  return <div className="flex gap-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#f0f4f5] text-[#6a7881]"><CrmIcon name={icon} className="h-3.5 w-3.5" /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">{label}</p><p className="mt-0.5 text-[11px] font-medium text-[#33414a]">{value}</p></div></div>;
+/** `ltr` keeps a phone number or email in reading order inside the Arabic layout (+20… not …20+). */
+export function InfoLine({ icon, label, value, ltr = false }: { icon: CrmIconName; label: string; value: string; ltr?: boolean }) {
+  return <div className="flex gap-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#f0f4f5] text-[#6a7881]"><CrmIcon name={icon} className="h-3.5 w-3.5" /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">{label}</p><p className="mt-0.5 text-[11px] font-medium text-[#33414a]">{ltr ? <bdi dir="ltr">{value}</bdi> : value}</p></div></div>;
 }
