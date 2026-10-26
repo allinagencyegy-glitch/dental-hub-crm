@@ -12,6 +12,7 @@
     "db:seed:acceptance": "tsx scripts/seed-acceptance.ts",
     "admin:create": "tsx scripts/create-admin.ts",
     "catalog:import": "tsx scripts/import-catalog.ts",
+    "spider:import": "tsx scripts/import-spider.ts",
     "test:foundation": "next build && vitest run",
     "test:crm": "vitest run --config vitest.crm.mts"
   },
