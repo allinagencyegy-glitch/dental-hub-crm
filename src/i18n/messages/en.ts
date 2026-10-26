@@ -223,6 +223,7 @@ export const en = {
       curing_lights: 'Curing lights',
       endodontics: 'Endodontics',
       whitening: 'Teeth whitening',
+      xray_sensors: 'X-ray sensors',
     } satisfies Record<string, string>,
     disqualifyReasons: {
       spam: 'Spam',
@@ -230,6 +231,8 @@ export const en = {
       job_applicant: 'Job applicant',
       student_research: 'Student research',
       out_of_scope: 'Out of scope',
+      not_interested: 'Not interested',
+      bought_elsewhere: 'Bought elsewhere',
       other: 'Other',
     } satisfies Record<string, string>,
     lostReasons: {

@@ -223,6 +223,7 @@ export const ar: Messages = {
       curing_lights: 'أجهزة اللايت كيور',
       endodontics: 'أجهزة علاج الجذور',
       whitening: 'أجهزة تبييض الأسنان',
+      xray_sensors: 'حساسات الأشعة (سنسور)',
     },
     disqualifyReasons: {
       spam: 'رسالة مزعجة',
@@ -230,6 +231,8 @@ export const ar: Messages = {
       job_applicant: 'متقدم لوظيفة',
       student_research: 'بحث طلابي',
       out_of_scope: 'خارج نطاق نشاطنا',
+      not_interested: 'غير مهتم',
+      bought_elsewhere: 'اشترى من مكان آخر',
       other: 'سبب آخر',
     },
     lostReasons: {
