@@ -536,8 +536,8 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               </div>
             </div>
             <div className="mt-5 grid gap-x-8 border-t border-[#e5eaec] pt-3 sm:grid-cols-2">
-              <InfoLine icon="phone" label={m.leads.phone} value={lead.contactPhone ?? m.common.notProvided} />
-              <InfoLine icon="mail" label={m.leads.email} value={lead.contactEmail ?? m.common.notProvided} />
+              <InfoLine icon="phone" label={m.leads.phone} value={lead.contactPhone ?? m.common.notProvided} ltr={lead.contactPhone !== null} />
+              <InfoLine icon="mail" label={m.leads.email} value={lead.contactEmail ?? m.common.notProvided} ltr={lead.contactEmail !== null} />
               <InfoLine icon="sparkles" label={m.leads.productInterest} value={productLabel ?? m.common.notSpecified} />
               <InfoLine icon="team" label={m.leads.owner} value={lead.ownerName} />
               {lead.campaignName && <InfoLine icon="target" label={m.leads.campaign} value={lead.campaignName} />}
