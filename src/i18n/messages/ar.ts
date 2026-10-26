@@ -23,6 +23,12 @@ export const ar: Messages = {
     tagline: 'نظام المبيعات',
     title: (page) => `${page} | Dental Hub CRM`,
   },
+  company: {
+    name: 'دينتال هب',
+    logoAlt: 'دينتال هب، شركة تثق بها',
+    address: 'برج المبتديان، شارع القصر العيني، أمام صيدلية المنيرة، القاهرة',
+    openMap: 'افتح الموقع على الخريطة',
+  },
   common: {
     saving: 'جارٍ الحفظ...',
     cancel: 'إلغاء',

@@ -28,3 +28,16 @@ html[lang="ar"] body * {
   letter-spacing: normal !important;
   text-transform: none !important;
 }
+
+/* Printed documents (the quotation) go on white A4 with a margin, whatever
+   the screen theme and whether or not the browser prints backgrounds. */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff;
+  }
+}

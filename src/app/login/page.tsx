@@ -1,7 +1,9 @@
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { getCurrentSession } from '@/server/auth/dal';
 import { getMessages } from '@/i18n/server';
 import { LanguageSwitch } from '@/components/shell/LanguageSwitch';
+import { BRAND_LOGO } from '@/components/brand/company';
 import { LoginForm } from './login-form';
 
 export async function generateMetadata() {
@@ -24,6 +26,15 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
+          <Image
+            src={BRAND_LOGO.src}
+            width={BRAND_LOGO.width}
+            height={BRAND_LOGO.height}
+            alt={m.company.logoAlt}
+            priority
+            unoptimized
+            className="mx-auto mb-6 h-14 w-auto"
+          />
           <h1 className="text-xl font-semibold tracking-tight text-white">{m.app.name}</h1>
           <p className="mt-1 text-sm text-slate-400">{m.login.subtitle}</p>
         </div>

@@ -20,6 +20,12 @@ export const en = {
     tagline: 'Sales CRM',
     title: (page: string) => `${page} | Dental Hub CRM`,
   },
+  company: {
+    name: 'Dental Hub',
+    logoAlt: 'Dental Hub, a company to trust',
+    address: 'El Mobtadayan Tower, Kasr El Aini St., opposite El Mounira Pharmacy, Cairo',
+    openMap: 'Open the location on the map',
+  },
   common: {
     saving: 'Saving...',
     cancel: 'Cancel',

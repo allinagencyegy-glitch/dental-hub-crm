@@ -1,9 +1,11 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { requirePermission } from '@/server/auth/dal';
 import { notFound } from 'next/navigation';
 import { getLocale, getMessages } from '@/i18n/server';
 import { formatters } from '@/i18n/format';
 import { getQuotationAction } from '@/server/crm/quotations/actions';
+import { BRAND_LOGO, COMPANY } from '@/components/brand/company';
 import { PrintButton } from './PrintButton';
 
 export async function generateMetadata() {
@@ -41,21 +43,34 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
 
       {/* The customer-facing document sheet. */}
       <article className="mx-auto max-w-[820px] rounded-xl bg-white p-10 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8] print:max-w-none print:rounded-none print:p-0 print:shadow-none print:ring-0">
-        {/* Header: Dental Hub identity. */}
+        {/* Header: Dental Hub identity and where to find the company. */}
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-[#101c24] pb-6">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-xl bg-[#18b6a4]">
-              <span className="text-lg font-bold tracking-[-0.08em] text-white">DH</span>
-            </div>
-            <div>
-              <p className="text-[17px] font-semibold tracking-[-0.02em] text-[#101c24]">{m.app.brand}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#18a897]">
-                {t.print.documentKind}
-              </p>
-            </div>
+          <div className="min-w-0 max-w-[420px]">
+            <Image
+              src={BRAND_LOGO.src}
+              width={BRAND_LOGO.width}
+              height={BRAND_LOGO.height}
+              alt={m.company.logoAlt}
+              priority
+              unoptimized
+              className="h-14 w-auto"
+            />
+            <p className="mt-3 text-[10px] leading-4 text-[#46545d]">
+              <a href={COMPANY.mapUrl} target="_blank" rel="noreferrer" title={m.company.openMap} className="hover:underline">
+                {m.company.address}
+              </a>
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold text-[#46545d]">
+              <a href={`tel:${COMPANY.phone}`} dir="ltr">
+                {COMPANY.phoneDisplay}
+              </a>
+            </p>
           </div>
           <div className="text-end">
-            <p className="text-[19px] font-semibold tracking-[-0.03em] text-[#17242d]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#c76b0f]">
+              {t.print.documentKind}
+            </p>
+            <p className="mt-1 text-[19px] font-semibold tracking-[-0.03em] text-[#17242d]">
               {quotation.quoteNumber}
             </p>
             <p className="mt-1 text-[10px] text-[#6c7a83]">
@@ -185,7 +200,10 @@ export default async function PrintQuotationPage({ params }: PrintQuotationPageP
         ) : null}
 
         <footer className="mt-10 border-t border-[#e5eaec] pt-4 text-[9px] leading-4 text-[#98a2a9]">
-          <p>
+          <p className="font-semibold text-[#6c7a83]">
+            {m.company.name} · {m.company.address} · <span dir="ltr">{COMPANY.phoneDisplay}</span>
+          </p>
+          <p className="mt-1">
             {t.print.footer(
               quotation.quoteNumber,
               status,
