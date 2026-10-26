@@ -15,6 +15,7 @@ import {
   createRevision,
   findQuotationById,
   findQuotationDetailById,
+  listQuotationIndex,
   listQuotationSnapshots,
   listQuotationsForOpportunity,
   transitionQuotation,
@@ -29,6 +30,8 @@ import {
   QuotationRevisionNotAllowedError,
   type Actor,
   type QuotationDetail,
+  type QuotationIndexCounts,
+  type QuotationIndexRow,
   type QuotationItemInput,
   type QuotationListItem,
   type QuotationRevisionSnapshot,
@@ -248,6 +251,16 @@ export async function listQuotationsUseCase(
 ): Promise<QuotationListItem[]> {
   const database = getDb(db);
   return listQuotationsForOpportunity(database, opportunityId, actor);
+}
+
+/** The quotations page: the actor's current quotations with the tab counts. */
+export async function listQuotationIndexUseCase(
+  actor: Actor,
+  options: Parameters<typeof listQuotationIndex>[2],
+  db?: Db,
+): Promise<{ quotations: QuotationIndexRow[]; total: number; counts: QuotationIndexCounts }> {
+  const database = getDb(db);
+  return listQuotationIndex(database, actor, options);
 }
 
 /** Edits a DRAFT quotation's items and commercial fields. */

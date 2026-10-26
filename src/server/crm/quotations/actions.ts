@@ -8,6 +8,7 @@ import { localise } from './messages';
 import {
   createQuotationUseCase,
   getQuotationUseCase,
+  listQuotationIndexUseCase,
   listQuotationsUseCase,
   listQuotationSnapshotsUseCase,
   reviseQuotationUseCase,
@@ -17,7 +18,14 @@ import {
   type QuotationCommercialInput,
   type QuotationResult,
 } from './service';
-import type { QuotationDetail, QuotationListItem, QuotationRevisionSnapshot } from './repository';
+import type {
+  QuotationDetail,
+  QuotationIndexCounts,
+  QuotationIndexRow,
+  QuotationListItem,
+  QuotationRevisionSnapshot,
+} from './repository';
+import { QUOTATION_STATUSES } from './status';
 
 const itemSchema = z.object({
   productId: z.uuid().nullable().optional(),
@@ -75,6 +83,27 @@ export async function listQuotationsAction(
   const session = await assertPermission('quotations:read');
   const actor: Actor = { userId: session.user.id, role: session.role };
   return listQuotationsUseCase(actor, opportunityId);
+}
+
+const indexOptionsSchema = z.object({
+  status: z.enum(QUOTATION_STATUSES).optional(),
+  ownerUserId: z.uuid().optional(),
+  search: z.string().max(200).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  offset: z.number().int().min(0).optional(),
+});
+
+/**
+ * The quotations page. An unreadable filter falls back to the unfiltered
+ * list; row scope still applies, so a rep only ever sees their own book.
+ */
+export async function listQuotationIndexAction(
+  input: unknown,
+): Promise<{ quotations: QuotationIndexRow[]; total: number; counts: QuotationIndexCounts }> {
+  const session = await assertPermission('quotations:read');
+  const actor: Actor = { userId: session.user.id, role: session.role };
+  const parsed = indexOptionsSchema.safeParse(input);
+  return listQuotationIndexUseCase(actor, parsed.success ? parsed.data : {});
 }
 
 /** Edits a DRAFT quotation's items and commercial fields. */
