@@ -16,7 +16,7 @@ import {
 import { findLeadById, LeadNotFoundError } from '@/server/crm/leads/repository';
 import { findUserById, listUsers } from '@/server/users/repository';
 import { isOpportunityStage, type OpportunityStage } from './stage';
-import { isFollowUpActionType, type FollowUpActionType } from './followup-actions';
+import { isFollowUpActionType, isFollowUpOutcome, type FollowUpActionType } from './followup-actions';
 import {
   createOpportunity,
   findOpportunityById,
@@ -637,17 +637,22 @@ export type CompleteFollowUpResult = { ok: true; followUp: FollowUp } | Failure;
 export async function completeFollowUpUseCase(
   actor: Actor,
   followUpId: string,
-  input: { completionNote?: string | null } = {},
+  input: { completionNote?: string | null; outcome?: string | null } = {},
   db?: Db,
 ): Promise<CompleteFollowUpResult> {
   const database = getDb(db);
 
   // Completing without saying what happened is the gap this slice closes: the
-  // next person to read the account needs the outcome, not just a tick. The
-  // repository stays permissive so maintenance scripts can still stamp rows;
-  // the product contract requires the note.
+  // next person to read the account needs the outcome, not just a tick. A
+  // picked result or a written note both say it; the screens ask for the
+  // result and make the note optional. The repository stays permissive so
+  // maintenance scripts can still stamp rows.
+  const outcome = input.outcome ?? null;
+  if (outcome !== null && !isFollowUpOutcome(outcome)) {
+    return { ok: false, error: 'VALIDATION', message: 'Unknown follow-up result.' };
+  }
   const completionNote = input.completionNote?.trim() ?? '';
-  if (completionNote.length === 0) {
+  if (completionNote.length === 0 && outcome === null) {
     return {
       ok: false,
       error: 'VALIDATION',
@@ -660,7 +665,7 @@ export async function completeFollowUpUseCase(
       database,
       followUpId,
       { userId: actor.userId, role: actor.role },
-      { completionNote },
+      { completionNote, outcome },
     );
     return { ok: true, followUp };
   } catch (error) {

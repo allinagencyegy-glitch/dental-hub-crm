@@ -1,7 +1,7 @@
 import type { Messages } from './messages';
 import type { OpportunityActivityEntry } from '@/server/crm/opportunities/repository';
 import { isOpportunityStage } from '@/server/crm/opportunities/stage';
-import { isFollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import { isFollowUpActionType, isFollowUpOutcome } from '@/server/crm/opportunities/followup-actions';
 
 /**
  * The title of an opportunity activity entry, in the reader's language.
@@ -27,7 +27,10 @@ export function activityTitle(entry: OpportunityActivityEntry, m: Messages): str
     case 'FOLLOW_UP_CREATED':
       return action === null ? entry.description : t.followUpScheduled(action);
     case 'FOLLOW_UP_COMPLETED':
-      return action === null ? entry.description : t.followUpCompleted(action);
+      if (action === null) return entry.description;
+      return isFollowUpOutcome(meta.outcome)
+        ? t.followUpCompletedWithResult(action, m.followUpOutcomes[meta.outcome])
+        : t.followUpCompleted(action);
     case 'FOLLOW_UP_RESCHEDULED':
       return action === null ? entry.description : t.followUpRescheduled(action);
     case 'FOLLOW_UP_MOVED':
