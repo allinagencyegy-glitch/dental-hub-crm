@@ -486,6 +486,18 @@ describe('Application Service - disqualifyLeadUseCase', () => {
     expect(lead.disqualifiedAt).toBeDefined();
   });
 
+  it('closes a lead as not interested or bought elsewhere without a note', async () => {
+    for (const code of ['not_interested', 'bought_elsewhere']) {
+      const { rows } = await db.query<{ id: string }>(
+        `SELECT id FROM crm_outcome_reason WHERE kind = 'disqualify' AND code = $1 AND is_active = true`,
+        [code],
+      );
+      const lead = await disqualifyLeadUseCase(rep1Actor, (await createTestLead(repUser1.id)).id, { reasonId: rows[0].id, note: null }, db);
+      expect(lead.status).toBe('DISQUALIFIED');
+      expect(lead.disqualifyReasonId).toBe(rows[0].id);
+    }
+  });
+
   it('allows ADMIN to disqualify any lead', async () => {
     const lead = await disqualifyLeadUseCase(adminActor, rep2LeadId, { reasonId: disqualifyReasonId, note: 'Test' }, db);
     expect(lead.status).toBe('DISQUALIFIED');

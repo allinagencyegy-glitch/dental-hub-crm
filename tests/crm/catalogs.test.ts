@@ -160,7 +160,16 @@ describe('outcome reasons', () => {
   const KINDS = ['disqualify', 'hold', 'lost'] as const;
 
   const expectedCodes: Record<(typeof KINDS)[number], string[]> = {
-    disqualify: ['job_applicant', 'other', 'out_of_scope', 'spam', 'student_research', 'wrong_number'],
+    disqualify: [
+      'bought_elsewhere',
+      'job_applicant',
+      'not_interested',
+      'other',
+      'out_of_scope',
+      'spam',
+      'student_research',
+      'wrong_number',
+    ],
     hold: [
       'awaiting_clinic_readiness',
       'awaiting_finance',
