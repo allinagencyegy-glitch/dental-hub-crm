@@ -12,7 +12,9 @@ import { createUser } from '../../src/server/users/repository';
 import { createContact } from '../../src/server/crm/contacts/repository';
 import { createLead } from '../../src/server/crm/leads/repository';
 import {
+  CALL_BACKS_PER_DAY,
   cairoTime,
+  callBackDueAt,
   categoryForCode,
   excludedBecause,
   outcomeForStatus,
@@ -126,7 +128,7 @@ describe('cleaning Spider values', () => {
     expect(sourceForReferral('Whatsapp')).toBe('whatsapp');
     expect(sourceForReferral('whatsapp')).toBe('whatsapp');
     expect(sourceForReferral('Facebook')).toBe('facebook');
-    expect(sourceForReferral('Dental hub')).toBe('outbound');
+    expect(sourceForReferral('Dental hub')).toBe('referral');
     expect(sourceForReferral('')).toBe('whatsapp');
   });
 
@@ -151,6 +153,22 @@ describe('cleaning Spider values', () => {
     expect(excludedBecause(client({ code: 'bojin' }))).toBe('bojin');
     expect(excludedBecause(client({ code: 'بوجين' }))).toBe('bojin');
     expect(excludedBecause(client({ code: 'ksensor' }))).toBeNull();
+  });
+
+  it('spreads call backs over the next working days, ten a day, Fridays off', () => {
+    expect(CALL_BACKS_PER_DAY).toBe(10);
+    const tuesday = new Date('2026-10-27T08:00:00Z');
+    const day = (index: number) => callBackDueAt(index, tuesday).toISOString();
+
+    expect(day(0)).toBe(cairoTime('2026-10-28 10:00:00')?.toISOString());
+    expect(day(9)).toBe(cairoTime('2026-10-28 10:00:00')?.toISOString());
+    expect(day(10)).toBe(cairoTime('2026-10-29 10:00:00')?.toISOString());
+    // Friday the 30th is skipped.
+    expect(day(20)).toBe(cairoTime('2026-10-31 10:00:00')?.toISOString());
+    // The day is Cairo's: just after midnight in Cairo is already the next day.
+    expect(callBackDueAt(0, new Date('2026-10-27T22:30:00Z')).toISOString()).toBe(
+      cairoTime('2026-10-29 10:00:00')?.toISOString(),
+    );
   });
 
   it('reads Spider times as Cairo time, daylight saving included', () => {
@@ -205,6 +223,10 @@ describe('planning the import', () => {
       ['مستورد من Spider (عميل رقم 7)', 'الكود: ksensor', 'آخر حالة: مردش 2', 'ملاحظات: H5', 'الوسوم: IMPORTANT'].join('\n'),
     );
     expect(lead.importRef).toBe('spider:7');
+
+    const [referred] = planSpiderImport([client({ number: '8', referral: 'Dental hub', phone: '+201001234568' })], TEAM).leads;
+    expect(referred.sourceCode).toBe('referral');
+    expect(referred.note).toContain('ترشيح عن طريق الإدارة (المصدر في Spider: Dental hub)');
     expect(lead.categoryCode).toBe('xray_sensors');
   });
 
@@ -366,7 +388,9 @@ describe('writing the import', () => {
          FROM crm_followup f JOIN crm_lead l ON l.id = f.lead_id
         WHERE l.import_ref = 'spider:104'`,
     );
-    expect(calls).toEqual([{ action_type: 'CALL', due_at: now, owner_user_id: repId, completed_at: null }]);
+    expect(calls).toEqual([
+      { action_type: 'CALL', due_at: callBackDueAt(0, now), owner_user_id: repId, completed_at: null },
+    ]);
   });
 
   it('skips what is already imported when run again', async () => {

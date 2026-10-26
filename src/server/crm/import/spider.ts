@@ -12,7 +12,8 @@
  *   - the last status decides the lead's state: never called stays NEW, "not
  *     interested" / "bought elsewhere" / "invalid" are disqualified with that
  *     reason, a purchase becomes a WON opportunity, a "call back" also gets a
- *     pending call in the owner's queue, and everything else is CONTACTED;
+ *     pending call in the owner's queue (spread over the coming working days,
+ *     see callBackDueAt), and everything else is CONTACTED;
  *   - the code, the last status and Spider's notes are kept in the lead note.
  *
  * Planning (pure, no database) and writing are separate, so a dry run can
@@ -216,8 +217,9 @@ export function sourceForReferral(referral: string): string {
   const key = matchKey(referral);
   if (key === 'facebook') return 'facebook';
   if (key === 'instagram') return 'instagram';
-  // "Dental hub" marks a client the company reached itself.
-  if (key === 'dentalhub') return 'outbound';
+  // "Dental hub" marks a client who came through the management - someone
+  // the owners brought in or who reached them personally - and was handed out.
+  if (key === 'dentalhub') return 'referral';
   return 'whatsapp';
 }
 
@@ -289,6 +291,35 @@ export function cairoTime(value: string): Date | null {
   return new Date(asUtc - offsetAt(first));
 }
 
+/** Imported call backs one person gets per working day. */
+export const CALL_BACKS_PER_DAY = 10;
+
+/**
+ * When an owner's imported call back number `index` (0-based) is due: 10:00
+ * Cairo time on the working days after `now`, CALL_BACKS_PER_DAY a day, with
+ * Fridays off. Hundreds of old "call back" clients would otherwise all land
+ * in the queue on the first day, already overdue.
+ */
+export function callBackDueAt(index: number, now: Date, perDay: number = CALL_BACKS_PER_DAY): Date {
+  const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(now)
+    .split('-')
+    .map(Number);
+
+  let date = Date.UTC(year, month - 1, day);
+  let workingDays = Math.floor(index / perDay) + 1;
+  while (workingDays > 0) {
+    date += 86_400_000;
+    if (new Date(date).getUTCDay() !== 5) workingDays--;
+  }
+  return cairoTime(`${new Date(date).toISOString().slice(0, 10)} 10:00:00`)!;
+}
+
 // ---------------------------------------------------------------------------
 // Planning
 // ---------------------------------------------------------------------------
@@ -326,6 +357,7 @@ function noteFor(client: SpiderClient, extra: string[]): string {
   if (client.lastStatus) lines.push(`آخر حالة: ${client.lastStatus}`);
   if (client.notes) lines.push(`ملاحظات: ${client.notes}`);
   if (client.tags) lines.push(`الوسوم: ${client.tags}`);
+  if (matchKey(client.referral) === 'dentalhub') lines.push('ترشيح عن طريق الإدارة (المصدر في Spider: Dental hub)');
   return [...lines, ...extra].join('\n').slice(0, 5000);
 }
 
@@ -440,6 +472,7 @@ export async function writeSpiderImport(
     `SELECT import_ref FROM crm_lead WHERE import_ref LIKE 'spider:%'`,
   );
   const imported = new Set(existing.map((row) => row.import_ref));
+  const callBacksByOwner = new Map<string, number>();
 
   const result: SpiderImportResult = {
     created: 0,
@@ -543,10 +576,12 @@ export async function writeSpiderImport(
     }
 
     if (outcome.kind === 'contacted' && outcome.callBack) {
+      const index = callBacksByOwner.get(ownerUserId) ?? 0;
+      callBacksByOwner.set(ownerUserId, index + 1);
       await db.query(
         `INSERT INTO crm_followup (lead_id, owner_user_id, action_type, note, due_at)
          VALUES ($1, $2, 'CALL', $3, $4)`,
-        [leadId, ownerUserId, 'معاودة اتصال من Spider', now],
+        [leadId, ownerUserId, 'معاودة اتصال من Spider', callBackDueAt(index, now)],
       );
       result.callBacks++;
     }
