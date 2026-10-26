@@ -177,8 +177,8 @@ cd /var/lib/dentalhub/current && sudo -u dentalhub npm run admin:create
 هيسألك عن الاسم والإيميل وكلمة السر (12 حرف على الأقل، ومش هتظهر وانت بتكتبها). بعدها:
 
 1. افتح `https://crm.example.com` وسجّل دخول بالحساب ده.
-2. من **Settings ← Users** ضيف باقي الفريق، واختار لكل واحد دوره (Sales Rep أو Sales Manager
-   أو Admin).
+2. من **Settings ← Users** ضيف باقي الفريق، واختار لكل واحد دوره (Sales Rep أو Team Leader أو
+   Sales Manager أو Admin). المندوب بيتحط على فريق Team Leader من نفس الصفحة.
 
 لو موظف نسي كلمة السر: الأدمن يفتح **Settings ← Users**، ويدوس **Reset password** جنب اسمه،
 ويكتب كلمة سر جديدة ويقولهاله. الموظف بيتعمله تسجيل خروج من كل الأجهزة، ويقدر يغيّرها بعد كده
@@ -200,6 +200,42 @@ cd /var/lib/dentalhub/current && sudo -u dentalhub npm run catalog:import
 الأمر ده بيضيف موديلات ROSON وToye وFomos وX-Smile وMecco بأسعارها. بعد كده الأسعار بتتعدل من
 **Settings ← Products** (المنتجات). لو شغّلته تاني، هيضيف بس الموديلات الناقصة، وعمره ما هيغيّر
 سعر اتعدّل من البرنامج.
+
+### نقل العملاء من Spider (مرة واحدة)
+
+بعد قايمة الأسعار، انقل عملاء Spider القدام. هتحتاج ملفات الـ Export (Clients والـ Team) في فولدر
+واحد على جهازك، اسمه مثلاً `spider`.
+
+1. ارفع الفولدر على السيرفر (من جهازك):
+
+   ```bash
+   scp -r spider root@<IPv4 بتاع السيرفر>:/root/spider
+   ```
+
+2. على السيرفر، حطّ الملفات في مكان مقفول على البرنامج بس، وشغّل **تجربة** الأول. التجربة بتقرا
+   الملفات وتطبع هيتنقل إيه بالظبط (كام عميل، لمين، بأنهي حالة)، ومن غير ما تكتب أي حاجة:
+
+   ```bash
+   install -d -m 700 -o dentalhub /var/lib/dentalhub/spider-import
+   install -m 600 -o dentalhub /root/spider/*.xlsx /var/lib/dentalhub/spider-import/
+   cd /var/lib/dentalhub/current && sudo -u dentalhub npm run spider:import -- /var/lib/dentalhub/spider-import
+   ```
+
+3. لو الأرقام مظبوطة، شغّله بجد:
+
+   ```bash
+   cd /var/lib/dentalhub/current && sudo -u dentalhub npm run spider:import -- /var/lib/dentalhub/spider-import --apply
+   ```
+
+   بيعمل حسابات الفريق، وكل حساب بكلمة سر عشوائية محدش يعرفها. ادخل **Settings ← Users** واعمل
+   **Reset password** لكل واحد، وحطّ كل مندوب على فريق الـ Team Leader بتاعه. لو شغّلته تاني، مش
+   هيكرر ولا عميل ولا حساب.
+
+4. امسح الملفات من السيرفر، لأن فيها أرقام العملاء:
+
+   ```bash
+   rm -r /root/spider /var/lib/dentalhub/spider-import
+   ```
 
 ما تشغّلش `db:seed` ولا `db:seed:acceptance` على السيرفر أبداً. دول لبيانات التجربة على جهاز
 المطوّر بس.
