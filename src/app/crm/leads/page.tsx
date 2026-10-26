@@ -25,9 +25,9 @@ async function getLeadsData(searchParams: Promise<{ status?: string; archive?: s
 
   const session = await requirePermission('leads:read');
   void session;
-  const { leads, total } = await listLeadsAction({ status, archiveFilter, search, limit, offset });
+  const { leads, total, counts } = await listLeadsAction({ status, archiveFilter, search, limit, offset });
 
-  return { leads, total, page, limit, status, archiveFilter, search };
+  return { leads, total, counts, page, limit, status, archiveFilter, search };
 }
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ status?: string; archive?: string; q?: string; page?: string }> }) {
