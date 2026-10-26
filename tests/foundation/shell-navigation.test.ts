@@ -80,6 +80,7 @@ describe('shell navigation', () => {
     expect(hrefs).toContain('/crm/opportunities');
     expect(hrefs).toContain('/crm/followups');
     expect(hrefs).toContain('/crm/pipeline');
+    expect(hrefs).toContain('/crm/quotations');
     expect(hrefs).toContain('/crm/settings/users');
     expect(hrefs).toContain('/crm/settings/products');
   });
@@ -110,5 +111,12 @@ describe('shell navigation', () => {
     const users = currentLinks((await http.get('/crm/settings/users')).body);
     expect(users).toHaveLength(1);
     expect(users[0].href).toBe('/crm/settings/users');
+
+    const quotations = await http.get('/crm/quotations');
+    expect(quotations.status).toBe(200);
+    expect(quotations.body).toContain('<h1');
+    const quotationsCurrent = currentLinks(quotations.body);
+    expect(quotationsCurrent).toHaveLength(1);
+    expect(quotationsCurrent[0].href).toBe('/crm/quotations');
   });
 });

@@ -33,6 +33,7 @@ import {
 } from './status';
 import type { Role } from '@/server/authz/permissions';
 import { ownerScopeSql } from '@/server/crm/scope';
+import { likePattern } from '@/server/db/like';
 
 export type Actor = { userId: string; role: Role };
 
@@ -189,6 +190,30 @@ export interface QuotationListItem {
   sentAt: Date | null;
   previousQuoteNumber: string | null;
 }
+
+/** One row of the quotations page: the quotation with its customer and owner. */
+export interface QuotationIndexRow {
+  id: string;
+  opportunityId: string;
+  quoteNumber: string;
+  version: number;
+  status: QuotationStatus;
+  totalAmount: number;
+  validUntil: Date | null;
+  /** Still open (draft or sent) although its valid-until date has passed. */
+  pastValidity: boolean;
+  sentAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  contactName: string;
+  accountName: string | null;
+  ownerName: string;
+}
+
+export type QuotationIndexFilter = 'ALL' | QuotationStatus;
+
+/** How many quotations, and what they are worth, under each status tab. */
+export type QuotationIndexCounts = Record<QuotationIndexFilter, { count: number; value: number }>;
 
 export interface QuotationRevisionSnapshot {
   id: string;
@@ -555,6 +580,140 @@ export async function listQuotationsForOpportunity(
       previousQuoteNumber: quotation.previousQuoteNumber,
     };
   });
+}
+
+/**
+ * The quotations page: every quotation in the actor's scope, newest activity
+ * first. A quotation that a revision has replaced is left out - the chain is
+ * read on its opportunity - so a deal shows once, at its current offer.
+ * The tab counts cover the whole scope (and the search and owner filter), not
+ * just the page.
+ */
+export async function listQuotationIndex(
+  db: Db,
+  actor: Actor,
+  options: {
+    status?: QuotationStatus;
+    ownerUserId?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<{ quotations: QuotationIndexRow[]; total: number; counts: QuotationIndexCounts }> {
+  const { status, ownerUserId, search, limit = 25, offset = 0 } = options;
+
+  const clauses = [
+    'NOT EXISTS (SELECT 1 FROM crm_quotation next WHERE next.previous_quote_id = q.id)',
+  ];
+  const params: (string | number | Date | null)[] = [];
+  pushScope(clauses, params, actor);
+
+  if (ownerUserId) {
+    params.push(ownerUserId);
+    clauses.push(`o.owner_user_id = $${params.length}`);
+  }
+
+  if (search !== undefined && search.trim() !== '') {
+    params.push(likePattern(search.trim()));
+    const placeholder = `$${params.length}`;
+    clauses.push(`(
+      q.quote_number ILIKE ${placeholder} ESCAPE '\\'
+      OR c.full_name ILIKE ${placeholder} ESCAPE '\\'
+      OR COALESCE(a.name, '') ILIKE ${placeholder} ESCAPE '\\'
+      OR owner.display_name ILIKE ${placeholder} ESCAPE '\\'
+      OR EXISTS (
+        SELECT 1 FROM crm_contact_channel ch
+         WHERE ch.contact_id = c.id AND ch.value ILIKE ${placeholder} ESCAPE '\\'
+      )
+    )`);
+  }
+
+  const joins = `
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+       JOIN crm_contact c     ON c.id = q.contact_id
+       JOIN crm_user owner    ON owner.id = o.owner_user_id
+       LEFT JOIN crm_account a ON a.id = q.account_id`;
+
+  const { rows: groups } = await db.query<{ status: QuotationStatus; count: string; value: string }>(
+    `SELECT q.status, count(*)::text AS count, COALESCE(sum(q.total_amount), 0)::text AS value
+       FROM crm_quotation q
+       ${joins}
+      WHERE ${clauses.join(' AND ')}
+      GROUP BY q.status`,
+    params,
+  );
+  const empty = () => ({ count: 0, value: 0 });
+  const counts: QuotationIndexCounts = {
+    ALL: empty(),
+    DRAFT: empty(),
+    SENT: empty(),
+    ACCEPTED: empty(),
+    REJECTED: empty(),
+    EXPIRED: empty(),
+  };
+  for (const group of groups) {
+    const count = Number(group.count);
+    const value = Number(group.value);
+    counts[group.status] = { count, value };
+    counts.ALL.count += count;
+    counts.ALL.value += value;
+  }
+  const total = counts[status ?? 'ALL'].count;
+
+  if (status) {
+    params.push(status);
+    clauses.push(`q.status = $${params.length}::crm_quotation_status`);
+  }
+  params.push(limit, offset);
+
+  const { rows } = await db.query<{
+    id: string;
+    opportunity_id: string;
+    quote_number: string;
+    version: number;
+    status: QuotationStatus;
+    total_amount: string;
+    valid_until: Date | null;
+    past_validity: boolean;
+    sent_at: Date | null;
+    created_at: Date;
+    updated_at: Date;
+    contact_name: string;
+    account_name: string | null;
+    owner_name: string;
+  }>(
+    `SELECT q.id, q.opportunity_id, q.quote_number, q.version, q.status, q.total_amount,
+            q.valid_until, q.sent_at, q.created_at, q.updated_at,
+            (q.status IN ('DRAFT', 'SENT') AND q.valid_until < now()) AS past_validity,
+            c.full_name AS contact_name, a.name AS account_name, owner.display_name AS owner_name
+       FROM crm_quotation q
+       ${joins}
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY q.updated_at DESC, q.id DESC
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+
+  return {
+    quotations: rows.map((row) => ({
+      id: row.id,
+      opportunityId: row.opportunity_id,
+      quoteNumber: row.quote_number,
+      version: row.version,
+      status: row.status,
+      totalAmount: Number(row.total_amount),
+      validUntil: row.valid_until,
+      pastValidity: row.past_validity === true,
+      sentAt: row.sent_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      contactName: row.contact_name,
+      accountName: row.account_name,
+      ownerName: row.owner_name,
+    })),
+    total,
+    counts,
+  };
 }
 
 /** The immutable snapshot log of one quotation, newest first. Empty out of scope. */
