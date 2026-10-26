@@ -20,6 +20,8 @@ import { Client } from 'pg';
 import { loadEnv } from './load-env';
 import { readXlsxRecords } from './spider/xlsx';
 import {
+  CALL_BACKS_PER_DAY,
+  callBackDueAt,
   planSpiderImport,
   spiderClientFromRecord,
   spiderTeamFromRecords,
@@ -50,17 +52,19 @@ function readExports(folder: string) {
   return { clients, team };
 }
 
-function count<T>(items: T[], key: (item: T) => string): string {
+function count<T>(items: T[], key: (item: T) => string): string;
+function count<T>(items: T[], key: (item: T) => string, raw: true): [string, number][];
+function count<T>(items: T[], key: (item: T) => string, raw = false): string | [string, number][] {
   const counts = new Map<string, number>();
   for (const item of items) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1);
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, n]) => `    ${String(n).padStart(5)}  ${name}`)
-    .join('\n');
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (raw) return sorted;
+  return sorted.map(([name, n]) => `    ${String(n).padStart(5)}  ${name}`).join('\n');
 }
 
 function printPlan(plan: SpiderImportPlan, clientRows: number): void {
   const outcome = (kind: string) => plan.leads.filter((lead) => lead.outcome.kind === kind).length;
+  const callBacks = plan.leads.filter((lead) => lead.outcome.kind === 'contacted' && lead.outcome.callBack);
   console.log(`\nSpider clients read: ${clientRows}`);
   console.log(`Leads to import:     ${plan.leads.length}`);
   console.log(`Left out:            ${plan.excluded.length} (Top Medical ${plan.excluded.filter((e) => e.because === 'top_medical').length}, Bojin ${plan.excluded.filter((e) => e.because === 'bojin').length})`);
@@ -71,8 +75,15 @@ function printPlan(plan: SpiderImportPlan, clientRows: number): void {
   console.log(
     `\nBy state:\n    ${String(outcome('new')).padStart(5)}  NEW (never reached)\n    ${String(outcome('contacted')).padStart(5)}  CONTACTED` +
       `\n    ${String(outcome('disqualified')).padStart(5)}  DISQUALIFIED\n    ${String(outcome('won')).padStart(5)}  WON opportunity` +
-      `\n    ${String(plan.leads.filter((lead) => lead.outcome.kind === 'contacted' && lead.outcome.callBack).length).padStart(5)}  with a call back due today`,
+      `\n    ${String(callBacks.length).padStart(5)}  with a call back`,
   );
+  const busiest = Math.max(0, ...count(callBacks, (lead) => lead.ownerSpiderName, true).map(([, n]) => n));
+  if (busiest > 0) {
+    const last = callBackDueAt(busiest - 1, new Date());
+    console.log(
+      `    Call backs are spread ${CALL_BACKS_PER_DAY} a day per person from tomorrow, Fridays off; the last is due ${last.toISOString().slice(0, 10)}.`,
+    );
+  }
   console.log('\nBy disqualify reason:\n' + count(plan.leads.filter((lead) => lead.outcome.kind === 'disqualified'), (lead) => (lead.outcome.kind === 'disqualified' ? lead.outcome.reason : '')));
   console.log('\nBy product category:\n' + count(plan.leads, (lead) => lead.categoryCode ?? '(none)'));
   console.log('\nBy source:\n' + count(plan.leads, (lead) => lead.sourceCode));
