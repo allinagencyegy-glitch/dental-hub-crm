@@ -546,7 +546,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
             {lead.note && (
               <div className="mt-3 rounded-lg bg-[#f7f9fa] p-4">
                 <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#8a959d]">{m.leads.inquiryContext}</p>
-                <p className="mt-2 text-[11px] leading-5 text-[#394750]">{lead.note}</p>
+                <p className="mt-2 whitespace-pre-line text-[11px] leading-5 text-[#394750]">{lead.note}</p>
               </div>
             )}
           </section>
