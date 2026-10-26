@@ -194,6 +194,23 @@ describe('HTTP acceptance', () => {
       expect(response.location).toContain('/crm/forbidden');
     });
 
+    it('lets a SALES_MANAGER keep the product catalogue', async () => {
+      const { http } = await signIn(manager.email);
+      const response = await http.get('/crm/settings/products');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toContain('Add a product');
+    });
+
+    it('refuses the product catalogue to SALES_REP', async () => {
+      const { http } = await signIn(rep.email);
+      const response = await http.get('/crm/settings/products');
+
+      expect(response.status).toBe(307);
+      expect(response.location).toContain('/crm/forbidden');
+      expect((await http.get('/crm')).body).not.toContain('href="/crm/settings/products"');
+    });
+
     it('does not leak the user directory to a non-admin', async () => {
       const { http } = await signIn(rep.email);
       const response = await http.get('/crm');

@@ -81,6 +81,7 @@ describe('shell navigation', () => {
     expect(hrefs).toContain('/crm/followups');
     expect(hrefs).toContain('/crm/pipeline');
     expect(hrefs).toContain('/crm/settings/users');
+    expect(hrefs).toContain('/crm/settings/products');
   });
 
   it('keeps the sign-out control in the document', async () => {

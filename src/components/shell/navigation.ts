@@ -22,7 +22,7 @@ export interface NavItem {
 export type NavKey = Extract<
   keyof Messages['nav'],
   | 'home' | 'leads' | 'opportunities' | 'customers' | 'followUps' | 'pipeline'
-  | 'quotations' | 'reports' | 'team' | 'users' | 'password'
+  | 'quotations' | 'reports' | 'team' | 'users' | 'products' | 'password'
 >;
 
 export const PRIMARY_NAV: NavItem[] = [
@@ -39,6 +39,7 @@ export const PRIMARY_NAV: NavItem[] = [
 
 export const SETTINGS_NAV: NavItem[] = [
   { key: 'users', href: '/crm/settings/users', status: 'available', permission: 'users:read' },
+  { key: 'products', href: '/crm/settings/products', status: 'available', permission: 'catalog:manage' },
   // Every signed-in user manages their own password.
   { key: 'password', href: '/crm/settings/password', status: 'available' },
 ];

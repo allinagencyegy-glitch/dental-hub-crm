@@ -41,6 +41,7 @@ describe('crm migrations', () => {
       { version: 11, name: 'crm_quotation_single_accepted' },
       { version: 12, name: 'auth_login_throttle' },
       { version: 13, name: 'crm_notifications' },
+      { version: 14, name: 'crm_product_catalog' },
     ]);
     expect(outcome.skipped).toEqual([]);
   });
@@ -49,12 +50,12 @@ describe('crm migrations', () => {
     const outcome = await runMigrations(client);
 
     expect(outcome.applied).toEqual([]);
-    expect(outcome.skipped).toHaveLength(13);
+    expect(outcome.skipped).toHaveLength(14);
 
     const { rows } = await client.query<{ count: string }>(
       'SELECT count(*)::text AS count FROM crm_schema_migration',
     );
-    expect(rows[0].count).toBe('13');
+    expect(rows[0].count).toBe('14');
   });
 
   it('seeds stable catalog reference data on fresh apply', async () => {
@@ -83,9 +84,14 @@ describe('crm migrations', () => {
       'autoclaves',
       'clinic_packages',
       'compressors',
+      'curing_lights',
       'dental_units',
+      'endodontics',
+      'intraoral_cameras',
       'other_equipment',
       'scalers',
+      'sterilization',
+      'whitening',
     ]);
 
     const { rows: reasons } = await client.query<{ kind: string; code: string; requires_note: boolean }>(

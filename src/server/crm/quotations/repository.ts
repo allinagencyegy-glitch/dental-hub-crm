@@ -107,6 +107,8 @@ export interface QuotationItem {
   id: string;
   quotationId: string;
   sequence: number;
+  /** The catalogue model this line sells. Null for a free-text line. */
+  productId: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -114,6 +116,7 @@ export interface QuotationItem {
 }
 
 export interface QuotationItemInput {
+  productId?: string | null;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -280,6 +283,7 @@ type QuotationItemRow = {
   id: string;
   quotation_id: string;
   sequence: number;
+  product_id: string | null;
   description: string;
   quantity: string;
   unit_price: string;
@@ -291,6 +295,7 @@ function toQuotationItem(row: QuotationItemRow): QuotationItem {
     id: row.id,
     quotationId: row.quotation_id,
     sequence: row.sequence,
+    productId: row.product_id,
     description: row.description,
     quantity: Number(row.quantity),
     unitPrice: Number(row.unit_price),
@@ -384,16 +389,18 @@ function insertItemRows(
   // One statement for all rows; line totals are rounded in SQL so the CHECK
   // (line_total = round(quantity * unit_price, 2)) and the stored value agree.
   return db.query(
-    `INSERT INTO crm_quotation_item (quotation_id, sequence, description, quantity, unit_price, line_total)
-     SELECT $1::uuid, t.ord::int, t.description, t.quantity::numeric, t.unit_price::numeric,
+    `INSERT INTO crm_quotation_item
+       (quotation_id, sequence, product_id, description, quantity, unit_price, line_total)
+     SELECT $1::uuid, t.ord::int, t.product_id, t.description, t.quantity::numeric, t.unit_price::numeric,
             round(t.quantity::numeric * t.unit_price::numeric, 2)
-       FROM unnest($2::text[], $3::numeric[], $4::numeric[])
-         WITH ORDINALITY AS t(description, quantity, unit_price, ord)`,
+       FROM unnest($5::uuid[], $2::text[], $3::numeric[], $4::numeric[])
+         WITH ORDINALITY AS t(product_id, description, quantity, unit_price, ord)`,
     [
       quotationId,
       items.map((item) => item.description),
       items.map((item) => quantity(item.quantity)),
       items.map((item) => money(item.unitPrice)),
+      items.map((item) => item.productId ?? null),
     ],
   );
 }
@@ -426,7 +433,7 @@ export async function findQuotationById(
 
 async function listItems(db: Db, quotationId: string): Promise<QuotationItem[]> {
   const { rows } = await db.query<QuotationItemRow>(
-    `SELECT id, quotation_id, sequence, description, quantity, unit_price, line_total
+    `SELECT id, quotation_id, sequence, product_id, description, quantity, unit_price, line_total
        FROM crm_quotation_item
       WHERE quotation_id = $1
       ORDER BY sequence ASC`,
@@ -921,8 +928,9 @@ export async function createRevision(
     const revision = toQuotation(rows[0]);
 
     await client.query(
-      `INSERT INTO crm_quotation_item (quotation_id, sequence, description, quantity, unit_price, line_total)
-       SELECT $1, sequence, description, quantity, unit_price, line_total
+      `INSERT INTO crm_quotation_item
+         (quotation_id, sequence, product_id, description, quantity, unit_price, line_total)
+       SELECT $1, sequence, product_id, description, quantity, unit_price, line_total
          FROM crm_quotation_item
         WHERE quotation_id = $2`,
       [revision.id, parent.id],

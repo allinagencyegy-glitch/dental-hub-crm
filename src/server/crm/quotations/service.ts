@@ -9,6 +9,7 @@
 import { db as defaultDb } from '@/server/db/client';
 import type { Db } from '@/server/db/types';
 import { findOpportunityById } from '@/server/crm/opportunities/repository';
+import { findProductsByIds } from '@/server/crm/catalog/repository';
 import {
   createQuotation,
   createRevision,
@@ -62,6 +63,7 @@ export type QuotationProblem =
   | 'TAX_NEGATIVE'
   | 'VALID_UNTIL_UNREADABLE'
   | 'DISCOUNT_EXCEEDS_SUBTOTAL'
+  | 'UNKNOWN_PRODUCT'
   | 'UNKNOWN_STATUS';
 
 type Failure = {
@@ -137,6 +139,29 @@ function validateCommercialInput(input: QuotationCommercialInput): Failure | nul
   return null;
 }
 
+/**
+ * Every catalogue model a line names must exist. A retired model is fine: a
+ * draft written before it was retired still saves. The picker only offers
+ * active ones.
+ */
+async function checkProducts(db: Db, items: QuotationItemInput[]): Promise<Failure | null> {
+  const ids = [...new Set(items.map((item) => item.productId).filter((id): id is string => !!id))];
+  const found = await findProductsByIds(db, ids);
+  if (found.length !== ids.length) {
+    return invalid('UNKNOWN_PRODUCT', 'A line item names a product that is not in the catalogue.');
+  }
+  return null;
+}
+
+function toItemInputs(items: QuotationItemInput[]): QuotationItemInput[] {
+  return items.map((item) => ({
+    productId: item.productId ?? null,
+    description: item.description.trim(),
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+  }));
+}
+
 function mapWriteFailure(error: unknown): Failure {
   if (error instanceof QuotationNotFoundError) {
     return { ok: false, error: 'NOT_FOUND', message: 'Quotation not found.' };
@@ -178,7 +203,7 @@ export async function createQuotationUseCase(
 ): Promise<QuotationResult> {
   const database = getDb(db);
 
-  const invalid = validateCommercialInput(input);
+  const invalid = validateCommercialInput(input) ?? (await checkProducts(database, input.items));
   if (invalid) return invalid;
 
   // Checked here for an accurate message; the repository re-checks inside the
@@ -192,11 +217,7 @@ export async function createQuotationUseCase(
   try {
     const quotation = await createQuotation(database, actor, {
       opportunityId,
-      items: input.items.map((item) => ({
-        description: item.description.trim(),
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-      })),
+      items: toItemInputs(input.items),
       discountAmount: input.discountAmount ?? 0,
       taxAmount: input.taxAmount ?? 0,
       notes: input.notes ?? null,
@@ -238,16 +259,12 @@ export async function updateDraftQuotationUseCase(
 ): Promise<QuotationResult> {
   const database = getDb(db);
 
-  const invalid = validateCommercialInput(input);
+  const invalid = validateCommercialInput(input) ?? (await checkProducts(database, input.items));
   if (invalid) return invalid;
 
   try {
     const quotation = await updateDraftQuotation(database, quotationId, actor, {
-      items: input.items.map((item) => ({
-        description: item.description.trim(),
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-      })),
+      items: toItemInputs(input.items),
       discountAmount: input.discountAmount ?? 0,
       taxAmount: input.taxAmount ?? 0,
       notes: input.notes ?? null,

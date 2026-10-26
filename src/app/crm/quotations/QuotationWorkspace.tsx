@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { BackLink } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import {
@@ -19,9 +19,12 @@ import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 import { snapshotReason } from '@/i18n/quotation';
 import type { QuotationDetail, QuotationRevisionSnapshot } from '@/server/crm/quotations/repository';
 import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/opportunities/repository';
+import type { CatalogProduct } from '@/server/crm/catalog/repository';
 
 type EditableItem = {
   key: string;
+  /** The catalogue model the line sells; null for a typed line. */
+  productId: string | null;
   description: string;
   quantity: string;
   unitPrice: string;
@@ -58,9 +61,11 @@ interface QuotationWorkspaceProps {
     'id' | 'contactName' | 'contactPhone' | 'contactPhoneIsWhatsApp' | 'accountName' | 'ownerName' | 'stage'
   > | null;
   snapshots: QuotationRevisionSnapshot[];
+  /** The active catalogue a line can be picked from. Empty for read-only viewers. */
+  products: CatalogProduct[];
 }
 
-export function QuotationWorkspace({ quotation, opportunity, snapshots }: QuotationWorkspaceProps) {
+export function QuotationWorkspace({ quotation, opportunity, snapshots, products }: QuotationWorkspaceProps) {
   const router = useRouter();
   const m = useMessages();
   const f = useFormatters();
@@ -70,11 +75,12 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
   const initialItems: EditableItem[] = quotation
     ? quotation.items.map((item) => ({
         key: item.id,
+        productId: item.productId,
         description: item.description,
         quantity: toItemString(item.quantity),
         unitPrice: toItemString(item.unitPrice),
       }))
-    : [{ key: nextItemKey(), description: '', quantity: '1', unitPrice: '' }];
+    : [{ key: nextItemKey(), productId: null, description: '', quantity: '1', unitPrice: '' }];
 
   const [items, setItems] = useState<EditableItem[]>(initialItems);
   const [discountAmount, setDiscountAmount] = useState(
@@ -115,7 +121,43 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
   };
 
   const addItem = () => {
-    setItems((current) => [...current, { key: nextItemKey(), description: '', quantity: '1', unitPrice: '' }]);
+    setItems((current) => [
+      ...current,
+      { key: nextItemKey(), productId: null, description: '', quantity: '1', unitPrice: '' },
+    ]);
+  };
+
+  // The picker groups models by brand, in the catalogue's order.
+  const productGroups = useMemo(() => {
+    const groups: { brand: string | null; products: CatalogProduct[] }[] = [];
+    for (const product of products) {
+      const last = groups[groups.length - 1];
+      if (last && last.brand === product.brand) last.products.push(product);
+      else groups.push({ brand: product.brand, products: [product] });
+    }
+    return groups;
+  }, [products]);
+
+  /** Picking a model fills the line's text and list price; both stay editable. */
+  const pickProduct = (key: string, productId: string) => {
+    if (productId === '') {
+      setItem(key, { productId: null });
+      return;
+    }
+    const product = products.find((candidate) => candidate.id === productId);
+    if (!product) return;
+    setItems((current) =>
+      current.map((item) =>
+        item.key === key
+          ? {
+              ...item,
+              productId: product.id,
+              description: t.productLabel(product.brand, product.name),
+              unitPrice: product.listPrice === null ? item.unitPrice : toItemString(product.listPrice),
+            }
+          : item,
+      ),
+    );
   };
 
   const removeItem = (key: string) => {
@@ -147,6 +189,7 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
 
   const collectPayload = () => {
     const payloadItems = items.map((item) => ({
+      productId: item.productId,
       description: item.description.trim(),
       quantity: Number(item.quantity),
       unitPrice: Number(item.unitPrice),
@@ -422,73 +465,108 @@ export function QuotationWorkspace({ quotation, opportunity, snapshots }: Quotat
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf0f1]">
-                {items.map((item, index) => (
-                  <tr key={item.key}>
-                    <td className="px-5 py-3 text-[10px] font-semibold text-[#9aa3aa]">{index + 1}</td>
-                    <td className="px-3 py-3">
-                      {editing ? (
-                        <textarea
-                          rows={1}
-                          value={item.description}
-                          onChange={(event) => setItem(item.key, { description: event.target.value })}
-                          placeholder={t.descriptionPlaceholder}
-                          className="w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 py-1.5 text-[11px] text-[#3c4a54] outline-none placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
-                        />
-                      ) : (
-                        <span className="text-[11px] font-medium text-[#33414a]">{item.description}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      {editing ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.quantity}
-                          onChange={(event) => setItem(item.key, { quantity: event.target.value })}
-                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
-                        />
-                      ) : (
-                        <span className="block text-end text-[11px] text-[#33414a]">{f.number(Number(item.quantity))}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      {editing ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unitPrice}
-                          onChange={(event) => setItem(item.key, { unitPrice: event.target.value })}
-                          className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
-                        />
-                      ) : (
-                        <span className="block text-end text-[11px] text-[#33414a]">
-                          {f.number(Number(item.unitPrice))}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="block text-end text-[11px] font-semibold text-[#2c3a43]">
-                        {lineTotal(item)}
-                      </span>
-                    </td>
-                    {editing ? (
-                      <td className="px-3 py-3 text-end">
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.key)}
-                          disabled={items.length === 1}
-                          title={t.removeLineItem}
-                          aria-label={t.removeLineItem}
-                          className="grid h-7 w-7 place-items-center rounded-md text-[#a4aeb5] transition hover:bg-[#fff0f1] hover:text-[#c43f47] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <CrmIcon name="x" className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
+                {items.map((item, index) => {
+                  // The picker has a row to itself, so long model names stay readable.
+                  const picker = editing && (products.length > 0 || item.productId !== null);
+                  return (
+                    <Fragment key={item.key}>
+                      {picker ? (
+                        <tr className="border-b-0">
+                          <td className="px-5 pt-3 text-[10px] font-semibold text-[#9aa3aa]">{index + 1}</td>
+                          <td colSpan={5} className="px-3 pt-3">
+                            <select
+                              value={item.productId ?? ''}
+                              onChange={(event) => pickProduct(item.key, event.target.value)}
+                              aria-label={t.productPicker}
+                              className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2 text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                            >
+                              <option value="">{t.freeTextLine}</option>
+                              {item.productId && !products.some((product) => product.id === item.productId) ? (
+                                // A model retired since this draft was written stays selectable.
+                                <option value={item.productId}>{item.description}</option>
+                              ) : null}
+                              {productGroups.map((group) => (
+                                <optgroup key={group.brand ?? ''} label={group.brand ?? m.products.noBrand}>
+                                  {group.products.map((product) => (
+                                    <option key={product.id} value={product.id}>
+                                      {product.name} ·{' '}
+                                      {product.listPrice === null ? t.priceOnRequest : f.currency(product.listPrice)}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ) : null}
+                      <tr>
+                        <td className="px-5 py-3 text-[10px] font-semibold text-[#9aa3aa]">{picker ? null : index + 1}</td>
+                        <td className="px-3 py-3">
+                          {editing ? (
+                            <textarea
+                              rows={1}
+                              value={item.description}
+                              onChange={(event) => setItem(item.key, { description: event.target.value })}
+                              placeholder={t.descriptionPlaceholder}
+                              className="field-sizing-content min-h-8 w-full resize-none rounded-lg border border-[#dce2e5] bg-white px-2.5 py-1.5 text-[11px] text-[#3c4a54] outline-none placeholder:text-[#a4aeb5] focus:border-[#18b6a4]"
+                            />
+                          ) : (
+                            <span className="text-[11px] font-medium text-[#33414a]">{item.description}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          {editing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.quantity}
+                              onChange={(event) => setItem(item.key, { quantity: event.target.value })}
+                              className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                            />
+                          ) : (
+                            <span className="block text-end text-[11px] text-[#33414a]">{f.number(Number(item.quantity))}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          {editing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unitPrice}
+                              onChange={(event) => setItem(item.key, { unitPrice: event.target.value })}
+                              className="h-8 w-full rounded-lg border border-[#dce2e5] bg-white px-2.5 text-end text-[11px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                            />
+                          ) : (
+                            <span className="block text-end text-[11px] text-[#33414a]">
+                              {f.number(Number(item.unitPrice))}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="block text-end text-[11px] font-semibold text-[#2c3a43]">
+                            {lineTotal(item)}
+                          </span>
+                        </td>
+                        {editing ? (
+                          <td className="px-3 py-3 text-end">
+                            <button
+                              type="button"
+                              onClick={() => removeItem(item.key)}
+                              disabled={items.length === 1}
+                              title={t.removeLineItem}
+                              aria-label={t.removeLineItem}
+                              className="grid h-7 w-7 place-items-center rounded-md text-[#a4aeb5] transition hover:bg-[#fff0f1] hover:text-[#c43f47] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <CrmIcon name="x" className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </section>

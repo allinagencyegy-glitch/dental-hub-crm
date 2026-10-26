@@ -18,6 +18,7 @@ const navIcons: Record<NavKey, CrmIconName> = {
   reports: 'reports',
   team: 'team',
   users: 'settings',
+  products: 'quotation',
   password: 'settings',
 };
 
