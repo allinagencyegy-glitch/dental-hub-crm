@@ -14,7 +14,14 @@ import {
   updateOpportunityAction,
 } from '@/server/crm/opportunities/actions';
 import { isTerminalStage, type OpportunityStage } from '@/server/crm/opportunities/stage';
-import { FOLLOW_UP_ACTION_TYPES, type FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import {
+  FOLLOW_UP_ACTION_TYPES,
+  isNotReached,
+  notReachedAttempts,
+  type FollowUpActionType,
+  type FollowUpOutcome,
+} from '@/server/crm/opportunities/followup-actions';
+import { FollowUpResultFields } from '@/components/crm/FollowUpResult';
 import type { LeadStatus } from '@/server/crm/leads/repository';
 import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/opportunities/repository';
 import type { OpportunityActivityEntry } from '@/server/crm/opportunities/repository';
@@ -141,6 +148,7 @@ export function OpportunityDetail({
   // is the gap this closes - and may chain the next action in one pass.
   const [completing, setCompleting] = useState<FollowUp | null>(null);
   const [completionNote, setCompletionNote] = useState('');
+  const [completionOutcome, setCompletionOutcome] = useState<FollowUpOutcome | null>(null);
   const [scheduleNext, setScheduleNext] = useState(false);
   const [nextActionType, setNextActionType] = useState<FollowUpActionType>('CALL');
   const [nextNote, setNextNote] = useState('');
@@ -177,15 +185,23 @@ export function OpportunityDetail({
 
   // The unified timeline: the durable activity feed (0007) plus the lead's own
   // arrival as the synthetic opening event. Newest first.
+  // Which try each unanswered call was, counted the way the team counts them.
+  const attempts = useMemo(() => notReachedAttempts(followUps), [followUps]);
+
   const timeline = useMemo(() => {
     const events: { key: string; at: Date; icon: string; title: string; detail?: string; followUp?: FollowUp }[] = [];
     for (const entry of activity) {
       const followUpId = typeof entry.metadata?.followUpId === 'string' ? entry.metadata.followUpId : undefined;
+      const attempt =
+        entry.activityType === 'FOLLOW_UP_COMPLETED' && followUpId ? attempts.get(followUpId) : undefined;
       events.push({
         key: entry.id,
         at: entry.createdAt,
         icon: ACTIVITY_ICON[entry.activityType],
-        title: activityTitle(entry, m),
+        title:
+          attempt !== undefined && attempt > 1
+            ? `${activityTitle(entry, m)} · ${m.followUp.attempt(attempt)}`
+            : activityTitle(entry, m),
         detail: entry.actorName ? t.by(entry.actorName) : undefined,
         followUp: followUpId ? followUpById.get(followUpId) : undefined,
       });
@@ -198,7 +214,7 @@ export function OpportunityDetail({
       detail: opportunity.contactName,
     });
     return events.sort((a, b) => b.at.getTime() - a.at.getTime());
-  }, [activity, followUpById, opportunity.leadReceivedAt, sourceName, opportunity.contactName, m, t]);
+  }, [activity, attempts, followUpById, opportunity.leadReceivedAt, sourceName, opportunity.contactName, m, t]);
 
   const nextAction = pending[0] ?? null;
   const isOverdue = nextAction !== null && nextAction.dueAt.getTime() < now;
@@ -258,6 +274,7 @@ export function OpportunityDetail({
   const openComplete = (followUp: FollowUp) => {
     setCompleting(followUp);
     setCompletionNote('');
+    setCompletionOutcome(null);
     setScheduleNext(false);
     setNextActionType('CALL');
     setNextNote('');
@@ -268,8 +285,8 @@ export function OpportunityDetail({
   const handleCompleteSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!completing) return;
-    if (!completionNote.trim()) {
-      setError(m.followUp.outcomeRequired);
+    if (completionOutcome === null) {
+      setError(m.followUp.resultRequired);
       return;
     }
     if (scheduleNext && !nextDueAt) {
@@ -280,7 +297,8 @@ export function OpportunityDetail({
     setError(null);
     try {
       const completed = await completeFollowUpAction(completing.id, {
-        completionNote: completionNote.trim(),
+        outcome: completionOutcome,
+        completionNote: completionNote.trim() || null,
       });
       if (completed.ok === false) {
         setError(completed.message);
@@ -1168,20 +1186,16 @@ export function OpportunityDetail({
               {t.completeSubtitle(m.followUpTypes[completing.actionType], format.date(completing.dueAt))}
             </p>
 
-            <label className="mt-4 block">
-              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                {m.followUp.outcomeRequiredLabel}
-              </span>
-              <textarea
-                value={completionNote}
-                onChange={(event) => setCompletionNote(event.target.value)}
-                rows={3}
-                required
-                autoFocus
-                placeholder={m.followUp.outcomePlaceholder}
-                className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
-              />
-            </label>
+            <FollowUpResultFields
+              outcome={completionOutcome}
+              onOutcomeChange={(outcome) => {
+                setCompletionOutcome(outcome);
+                // Nobody answered: offer the next try straight away.
+                if (isNotReached(outcome)) setScheduleNext(true);
+              }}
+              note={completionNote}
+              onNoteChange={setCompletionNote}
+            />
 
             <label className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#53616a]">
               <input
@@ -1248,7 +1262,7 @@ export function OpportunityDetail({
               </button>
               <button
                 type="submit"
-                disabled={busy || completionNote.trim().length === 0}
+                disabled={busy || completionOutcome === null}
                 className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
               >
                 {busy ? m.followUp.saving : m.followUp.complete}

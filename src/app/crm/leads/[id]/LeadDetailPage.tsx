@@ -7,7 +7,14 @@ import { Avatar, BackLink, Badge, InfoLine } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
 import { markLeadContactedAction, disqualifyLeadAction, archiveLeadAction, restoreLeadAction, linkLeadToAccountAction } from '@/server/crm/leads/actions';
 import { qualifyLeadAction, createLeadFollowUpAction, completeFollowUpAction } from '@/server/crm/opportunities/actions';
-import { FOLLOW_UP_ACTION_TYPES, type FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
+import {
+  FOLLOW_UP_ACTION_TYPES,
+  isNotReached,
+  notReachedAttempts,
+  type FollowUpActionType,
+  type FollowUpOutcome,
+} from '@/server/crm/opportunities/followup-actions';
+import { FollowUpResultBadge, FollowUpResultFields } from '@/components/crm/FollowUpResult';
 import type { FollowUp } from '@/server/crm/opportunities/followups';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
@@ -25,6 +32,11 @@ interface DisqualifyReason {
 function toLocalInputValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+/** The next try's default: this time tomorrow. Read when a dialog opens. */
+function sameTimeTomorrow(): string {
+  return toLocalInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
 interface LeadDetailPageProps {
@@ -93,6 +105,10 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
 
   const [completing, setCompleting] = useState<FollowUp | null>(null);
   const [completionNote, setCompletionNote] = useState('');
+  const [completionOutcome, setCompletionOutcome] = useState<FollowUpOutcome | null>(null);
+  // Nobody answered: the next try can be booked from the same dialog.
+  const [nextTry, setNextTry] = useState(false);
+  const [nextTryAt, setNextTryAt] = useState('');
   const [completingSubmitting, setCompletingSubmitting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
 
@@ -108,6 +124,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const completedFollowUps = followUps
     .filter((followUp) => followUp.completedAt !== null)
     .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0));
+  const attempts = notReachedAttempts(followUps);
 
   const handleScheduleFollowUp = async (event: FormEvent) => {
     event.preventDefault();
@@ -146,25 +163,45 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
   const openComplete = (followUp: FollowUp) => {
     setCompleting(followUp);
     setCompletionNote('');
+    setCompletionOutcome(null);
+    setNextTry(false);
+    setNextTryAt(sameTimeTomorrow());
     setCompleteError(null);
   };
 
   const handleCompleteSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!completing) return;
-    if (!completionNote.trim()) {
-      setCompleteError(t.outcomeRequired);
+    if (completionOutcome === null) {
+      setCompleteError(m.followUp.resultRequired);
+      return;
+    }
+    const nextDue = nextTry ? new Date(nextTryAt) : null;
+    if (nextDue !== null && Number.isNaN(nextDue.getTime())) {
+      setCompleteError(t.dueUnreadable);
       return;
     }
     setCompletingSubmitting(true);
     setCompleteError(null);
     try {
       const result = await completeFollowUpAction(completing.id, {
-        completionNote: completionNote.trim(),
+        outcome: completionOutcome,
+        completionNote: completionNote.trim() || null,
       });
       if (result.ok === false) {
         setCompleteError(result.message);
         return;
+      }
+      if (nextDue !== null) {
+        const next = await createLeadFollowUpAction(lead.id, {
+          actionType: completing.actionType,
+          note: null,
+          dueAt: nextDue.toISOString(),
+        });
+        if (next.ok === false) {
+          setCompleteError(next.message);
+          return;
+        }
       }
       setCompleting(null);
       router.refresh();
@@ -644,8 +681,11 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
                   {completedFollowUps.map((followUp) => (
                     <div key={followUp.id} className="flex items-center justify-between gap-3 opacity-70">
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-[#35424b]">
+                        <p className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-[#35424b]">
                           {actionLabel(followUp.actionType)}
+                          {followUp.outcome ? (
+                            <FollowUpResultBadge outcome={followUp.outcome} attempt={attempts.get(followUp.id)} />
+                          ) : null}
                         </p>
                         <p className="mt-0.5 text-[9px] text-[#8b969e]">
                           {followUp.completedAt ? t.doneAt(format.date(followUp.completedAt)) : null}
@@ -990,19 +1030,42 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               {t.completeSubtitle(actionLabel(completing.actionType), format.date(completing.dueAt))}
             </p>
 
-            <div className="mt-4">
-              <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#8a959d] mb-1.5">
-                {t.outcome} *
-              </label>
-              <textarea
-                value={completionNote}
-                onChange={(event) => setCompletionNote(event.target.value)}
-                rows={3}
-                autoFocus
-                className="w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#1c2831] placeholder-[#94a0a9] focus:border-[#18b6a4] resize-none"
-                placeholder={t.outcomePlaceholder}
-              />
-            </div>
+            <FollowUpResultFields
+              outcome={completionOutcome}
+              onOutcomeChange={(outcome) => {
+                setCompletionOutcome(outcome);
+                if (isNotReached(outcome)) setNextTry(true);
+              }}
+              note={completionNote}
+              onNoteChange={setCompletionNote}
+            />
+
+            {canScheduleFollowUp ? (
+              <>
+                <label className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#53616a]">
+                  <input
+                    type="checkbox"
+                    checked={nextTry}
+                    onChange={(event) => setNextTry(event.target.checked)}
+                    className="h-3.5 w-3.5 accent-[#18b6a4]"
+                  />
+                  {m.followUp.scheduleNextTry}
+                </label>
+                {nextTry ? (
+                  <label className="mt-2 block rounded-lg bg-[#f6f8f9] p-3">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                      {m.followUp.nextTryAt}
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={nextTryAt}
+                      onChange={(event) => setNextTryAt(event.target.value)}
+                      className="mt-1 h-8 w-full rounded-md border border-[#dce2e5] bg-white px-2 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                    />
+                  </label>
+                ) : null}
+              </>
+            ) : null}
 
             {completeError ? (
               <p role="alert" className="mt-2 text-sm text-[#c43f47]">
@@ -1021,7 +1084,7 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               </button>
               <button
                 type="submit"
-                disabled={completingSubmitting || completionNote.trim().length === 0}
+                disabled={completingSubmitting || completionOutcome === null}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#132932] px-4 text-[11px] font-semibold text-white transition hover:bg-[#1b3944] disabled:opacity-50"
               >
                 {completingSubmitting ? m.common.saving : t.complete}

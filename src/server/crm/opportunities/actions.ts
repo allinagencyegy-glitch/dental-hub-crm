@@ -37,7 +37,7 @@ import {
   type RescheduleFollowUpResult,
 } from './service';
 import { OPPORTUNITY_STAGES, isOpportunityStage } from './stage';
-import { FOLLOW_UP_ACTION_TYPES } from './followup-actions';
+import { FOLLOW_UP_ACTION_TYPES, isFollowUpOutcome } from './followup-actions';
 import { localise } from './messages';
 import type { OpportunityStageFilter } from './repository';
 import type { FollowUpWindow } from './followups';
@@ -207,11 +207,15 @@ export async function createLeadFollowUpAction(
 
 export async function completeFollowUpAction(
   followUpId: string,
-  input: { completionNote?: string | null } = {},
+  input: { completionNote?: string | null; outcome?: string | null } = {},
 ): Promise<CompleteFollowUpResult> {
   const session = await assertPermission('followups:write');
   const actor: Actor = { userId: session.user.id, role: session.role };
-  return localise('complete', await completeFollowUpUseCase(actor, followUpId, input), await getMessages());
+  const m = await getMessages();
+  if (input.outcome != null && !isFollowUpOutcome(input.outcome)) {
+    return { ok: false, error: 'VALIDATION', message: m.opportunities.errors.unknownOutcome };
+  }
+  return localise('complete', await completeFollowUpUseCase(actor, followUpId, input), m);
 }
 
 export async function rescheduleFollowUpAction(

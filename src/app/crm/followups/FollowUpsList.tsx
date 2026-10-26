@@ -5,12 +5,32 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Avatar, PageHeader } from '@/components/crm/Ui';
 import { CrmIcon } from '@/components/crm/CrmIcon';
-import type { FollowUpActionType } from '@/server/crm/opportunities/followup-actions';
-import { completeFollowUpAction } from '@/server/crm/opportunities/actions';
+import {
+  isNotReached,
+  type FollowUpActionType,
+  type FollowUpOutcome,
+} from '@/server/crm/opportunities/followup-actions';
+import {
+  completeFollowUpAction,
+  createFollowUpAction,
+  createLeadFollowUpAction,
+} from '@/server/crm/opportunities/actions';
+import { FollowUpResultBadge, FollowUpResultFields } from '@/components/crm/FollowUpResult';
 import type { FollowUpListRow, FollowUpWindow } from '@/server/crm/opportunities/followups';
 import { useFormatters, useMessages } from '@/i18n/I18nProvider';
 
 const WINDOWS: FollowUpWindow[] = ['overdue', 'today', 'upcoming', 'completed'];
+
+/** datetime-local wants "YYYY-MM-DDTHH:mm" in the browser's own timezone. */
+function toLocalInputValue(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+/** The next try's default: this time tomorrow. Read when a dialog opens. */
+function sameTimeTomorrow(): string {
+  return toLocalInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
+}
 
 const ACTION_ICON: Record<FollowUpActionType, 'phone' | 'message' | 'meeting' | 'quotation' | 'activity' | 'clock'> = {
   CALL: 'phone',
@@ -40,9 +60,12 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Completion captures the outcome; the API refuses an empty note.
+  // Completion records the result; nobody answering books the next try.
   const [completing, setCompleting] = useState<FollowUpListRow | null>(null);
   const [completionNote, setCompletionNote] = useState('');
+  const [completionOutcome, setCompletionOutcome] = useState<FollowUpOutcome | null>(null);
+  const [nextTry, setNextTry] = useState(false);
+  const [nextTryAt, setNextTryAt] = useState('');
 
   const totalPages = Math.ceil(total / limit);
 
@@ -63,25 +86,47 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
   const openComplete = (row: FollowUpListRow) => {
     setCompleting(row);
     setCompletionNote('');
+    setCompletionOutcome(null);
+    setNextTry(false);
+    setNextTryAt(sameTimeTomorrow());
     setError(null);
   };
 
   const handleCompleteSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!completing) return;
-    if (!completionNote.trim()) {
-      setError(m.followUp.outcomeRequired);
+    if (completionOutcome === null) {
+      setError(m.followUp.resultRequired);
+      return;
+    }
+    const nextDue = nextTry ? new Date(nextTryAt) : null;
+    if (nextDue !== null && Number.isNaN(nextDue.getTime())) {
+      setError(m.followUp.dueUnreadable);
       return;
     }
     setBusyId(completing.id);
     setError(null);
     try {
       const result = await completeFollowUpAction(completing.id, {
-        completionNote: completionNote.trim(),
+        outcome: completionOutcome,
+        completionNote: completionNote.trim() || null,
       });
       if (result.ok === false) {
         setError(result.message);
         return;
+      }
+      if (nextDue !== null) {
+        const input = { actionType: completing.actionType, note: null, dueAt: nextDue.toISOString() };
+        const next =
+          completing.parentKind === 'lead' && completing.leadId
+            ? await createLeadFollowUpAction(completing.leadId, input)
+            : completing.opportunityId
+              ? await createFollowUpAction(completing.opportunityId, input)
+              : null;
+        if (next && next.ok === false) {
+          setError(next.message);
+          return;
+        }
       }
       setCompleting(null);
       router.refresh();
@@ -176,6 +221,11 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
                       </span>
                     ) : null}
                   </p>
+                  {followUp.outcome ? (
+                    <p className="mt-1">
+                      <FollowUpResultBadge outcome={followUp.outcome} />
+                    </p>
+                  ) : null}
                   {followUp.note ? (
                     <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#74818a]">
                       {followUp.note}
@@ -286,20 +336,38 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               )}
             </p>
 
-            <label className="mt-4 block">
-              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
-                {m.followUp.outcomeRequiredLabel}
-              </span>
-              <textarea
-                value={completionNote}
-                onChange={(event) => setCompletionNote(event.target.value)}
-                rows={3}
-                required
-                autoFocus
-                placeholder={m.followUp.outcomePlaceholder}
-                className="mt-1.5 w-full rounded-lg border border-[#dce2e5] bg-white px-3 py-2 text-[11px] text-[#33414a] outline-none focus:border-[#18b6a4]"
+            <FollowUpResultFields
+              outcome={completionOutcome}
+              onOutcomeChange={(outcome) => {
+                setCompletionOutcome(outcome);
+                if (isNotReached(outcome)) setNextTry(true);
+              }}
+              note={completionNote}
+              onNoteChange={setCompletionNote}
+            />
+
+            <label className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#53616a]">
+              <input
+                type="checkbox"
+                checked={nextTry}
+                onChange={(event) => setNextTry(event.target.checked)}
+                className="h-3.5 w-3.5 accent-[#18b6a4]"
               />
+              {m.followUp.scheduleNextTry}
             </label>
+            {nextTry ? (
+              <label className="mt-2 block rounded-lg bg-[#f6f8f9] p-3">
+                <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-[#9aa3aa]">
+                  {m.followUp.nextTryAt}
+                </span>
+                <input
+                  type="datetime-local"
+                  value={nextTryAt}
+                  onChange={(event) => setNextTryAt(event.target.value)}
+                  className="mt-1 h-8 w-full rounded-md border border-[#dce2e5] bg-white px-2 text-[10px] text-[#3c4a54] outline-none focus:border-[#18b6a4]"
+                />
+              </label>
+            ) : null}
 
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -311,7 +379,7 @@ export function FollowUpsList({ followUps, total, page, limit, window, counts }:
               </button>
               <button
                 type="submit"
-                disabled={busyId === completing.id || completionNote.trim().length === 0}
+                disabled={busyId === completing.id || completionOutcome === null}
                 className="h-8 rounded-lg bg-[#132932] px-3.5 text-[10px] font-bold text-white transition hover:bg-[#1b3944] disabled:opacity-60"
               >
                 {busyId === completing.id ? m.followUp.saving : m.followUp.complete}

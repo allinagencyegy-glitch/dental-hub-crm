@@ -23,6 +23,7 @@ import {
   isFollowUpActionType,
   ACTION_TYPE_LABELS,
   type FollowUpActionType,
+  type FollowUpOutcome,
 } from './followup-actions';
 
 export interface FollowUp {
@@ -36,6 +37,8 @@ export interface FollowUp {
   note: string | null;
   dueAt: Date;
   completedAt: Date | null;
+  /** What happened, set when the follow-up is completed. */
+  outcome: FollowUpOutcome | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +52,7 @@ type FollowUpRow = {
   note: string | null;
   due_at: Date;
   completed_at: Date | null;
+  outcome: FollowUpOutcome | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -63,6 +67,7 @@ function toFollowUp(row: FollowUpRow): FollowUp {
     note: row.note,
     dueAt: row.due_at,
     completedAt: row.completed_at,
+    outcome: row.outcome,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -72,7 +77,7 @@ function toFollowUp(row: FollowUpRow): FollowUp {
 // available.
 const FOLLOW_UP_COLUMNS = `
   id, opportunity_id, lead_id, owner_user_id, action_type, note,
-  due_at, completed_at, created_at, updated_at
+  due_at, completed_at, outcome, created_at, updated_at
 `;
 
 // Qualified with the `f` alias for every SELECT. Several of these columns
@@ -81,7 +86,7 @@ const FOLLOW_UP_COLUMNS = `
 // are ambiguous.
 const FOLLOW_UP_COLUMNS_F = `
   f.id, f.opportunity_id, f.lead_id, f.owner_user_id, f.action_type, f.note,
-  f.due_at, f.completed_at, f.created_at, f.updated_at
+  f.due_at, f.completed_at, f.outcome, f.created_at, f.updated_at
 `;
 
 type Actor = { userId: string; role: 'ADMIN' | 'SALES_MANAGER' | 'SALES_REP' };
@@ -261,7 +266,7 @@ export async function completeFollowUp(
   db: Db,
   followUpId: string,
   actor: Actor,
-  input: { completionNote?: string | null } = {},
+  input: { completionNote?: string | null; outcome?: FollowUpOutcome | null } = {},
 ): Promise<FollowUp> {
   const transaction = await beginTransaction(db);
   const client = transaction.client;
@@ -271,9 +276,11 @@ export async function completeFollowUp(
     if (followUp.completedAt !== null) throw new FollowUpAlreadyCompletedError();
 
     const completionNote = input.completionNote?.trim() || null;
+    const outcome = input.outcome ?? null;
     const { rows } = await client.query<FollowUpRow>(
       `UPDATE crm_followup
           SET completed_at = now(),
+              outcome = $3,
               note = CASE
                 WHEN $2::text IS NOT NULL THEN trim(btrim(COALESCE(note || E'\n', '') || $2::text))
                 ELSE note
@@ -281,7 +288,7 @@ export async function completeFollowUp(
               updated_at = now()
         WHERE id = $1 AND completed_at IS NULL
         RETURNING ${FOLLOW_UP_COLUMNS}`,
-      [followUpId, completionNote],
+      [followUpId, completionNote, outcome],
     );
 
     if (rows.length === 0) throw new FollowUpAlreadyCompletedError();
@@ -295,6 +302,7 @@ export async function completeFollowUp(
         metadata: {
           followUpId: completed.id,
           actionType: completed.actionType,
+          outcome,
           completionNote,
           completedAt: completed.completedAt?.toISOString() ?? null,
         },
@@ -697,7 +705,7 @@ export async function listFollowUps(
   const { rows } = await db.query<FollowUpListRowRaw>(
     `SELECT
        f.id, f.opportunity_id, f.lead_id, f.owner_user_id, f.action_type, f.note,
-       f.due_at, f.completed_at, f.created_at, f.updated_at,
+       f.due_at, f.completed_at, f.outcome, f.created_at, f.updated_at,
        o.stage          AS opportunity_stage,
        c.full_name      AS contact_name,
        a.name           AS account_name,
