@@ -337,6 +337,16 @@ describe('interface language', () => {
       for (const text of ['مقدَّم إلى', 'تاريخ العرض', 'الإجمالي قبل الخصم', 'طباعة / حفظ PDF', 'أعدّه Arabic Quote Rep']) {
         expect(print).toContain(text);
       }
+      // The document carries the company's logo, address and phone.
+      for (const text of [
+        'src="/brand/dental-hub-logo.png"',
+        'alt="دينتال هب، شركة تثق بها"',
+        'برج المبتديان، شارع القصر العيني، أمام صيدلية المنيرة، القاهرة',
+        'href="https://maps.google.com/?q=30.034927,31.236965"',
+        '0111 6516 419',
+      ]) {
+        expect(print).toContain(text);
+      }
 
       const fresh = (await http.get(`/crm/quotations/new?opportunity=${qualified.opportunity.id}`)).body;
       expect(fresh).toContain('<title>عرض سعر جديد | Dental Hub CRM</title>');

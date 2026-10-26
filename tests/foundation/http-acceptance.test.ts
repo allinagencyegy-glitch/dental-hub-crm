@@ -80,6 +80,16 @@ describe('HTTP acceptance', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toContain('Dental Hub CRM');
+      expect(response.body).toContain('src="/brand/dental-hub-logo.png"');
+    });
+
+    it('serves the brand artwork without a session, so the login page shows the logo', async () => {
+      for (const path of ['/brand/dental-hub-logo.png', '/brand/dental-hub-mark.png']) {
+        const response = await client().get(path);
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type')).toBe('image/png');
+      }
     });
   });
 
