@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
-import type { Client } from 'pg';
+import { Pool, type Client } from 'pg';
 import { connectTestDb, uniqueEmail, TEST_PASSWORD } from './setup/db';
 import { HttpClient } from './setup/http';
 import { createUser } from '../../src/server/users/repository';
@@ -64,15 +64,18 @@ describe('login throttle (repository)', () => {
 
   it('counts parallel attempts atomically', async () => {
     const email = uniqueEmail('throttle.parallel');
-    const clients = await Promise.all(Array.from({ length: 4 }, () => connectTestDb()));
+    const attempts = 20;
+    // One connection per attempt, so the attempts really race in the database.
+    // A single client would queue them one after another.
+    const pool = new Pool({ connectionString: inject('databaseUrl'), max: attempts });
 
     try {
       const results = await Promise.all(
-        Array.from({ length: 20 }, (_, i) => reserveLoginAttempt(clients[i % clients.length], email)),
+        Array.from({ length: attempts }, () => reserveLoginAttempt(pool, email)),
       );
       expect(results.filter((r) => r.allowed)).toHaveLength(LOGIN_MAX_ATTEMPTS);
     } finally {
-      await Promise.all(clients.map((c) => c.end()));
+      await pool.end();
     }
   });
 
