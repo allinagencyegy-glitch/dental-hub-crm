@@ -15,6 +15,8 @@ import {
   type FollowUpOutcome,
 } from '@/server/crm/opportunities/followup-actions';
 import { FollowUpResultBadge, FollowUpResultFields } from '@/components/crm/FollowUpResult';
+import { WhatsAppMessages } from '@/components/crm/WhatsAppMessages';
+import type { WhatsAppMessageEntry } from '@/server/crm/intake/repository';
 import type { FollowUp } from '@/server/crm/opportunities/followups';
 import type { LeadDetail } from '@/server/crm/leads/repository';
 import type { BadgeValue } from '@/components/crm/Ui';
@@ -49,11 +51,12 @@ interface LeadDetailPageProps {
   opportunityId: string | null;
   qualifiedAt: Date | null;
   followUps: FollowUp[];
+  whatsAppMessages: WhatsAppMessageEntry[];
   /** Server render time, in epoch millis. Stable across client re-renders. */
   now: number;
 }
 
-export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, userId, opportunityId, qualifiedAt, followUps, now }: LeadDetailPageProps) {
+export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, userId, opportunityId, qualifiedAt, followUps, whatsAppMessages, now }: LeadDetailPageProps) {
   const router = useRouter();
   const m = useMessages();
   const format = useFormatters();
@@ -550,6 +553,8 @@ export function LeadDetailPage({ lead, disqualifyReasons, accounts, userRole, us
               </div>
             )}
           </section>
+
+          <WhatsAppMessages messages={whatsAppMessages} phone={lead.contactPhone} />
 
           <section className="rounded-xl bg-white border border-[#dfe5e8] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">

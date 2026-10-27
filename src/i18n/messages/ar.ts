@@ -1210,6 +1210,22 @@ export const ar: Messages = {
       UNREADABLE: 'تعذّرت قراءة بيانات المنتج. راجع الحقول وحاول مرة أخرى.',
     },
   },
+  whatsApp: {
+    title: 'رسائل واتساب',
+    hint: 'ما كتبه العميل على رقم الشركة. الرد يكون من واتساب.',
+    openChat: 'فتح المحادثة',
+    fromAd: (headline) => `جاء من الإعلان: ${headline}`,
+    noText: {
+      image: 'أرسل صورة',
+      video: 'أرسل فيديو',
+      audio: 'أرسل رسالة صوتية',
+      document: 'أرسل ملفًا',
+      sticker: 'أرسل ملصقًا',
+      location: 'أرسل موقعًا',
+      contacts: 'أرسل جهة اتصال',
+      other: 'أرسل رسالة لا يمكن عرضها هنا',
+    },
+  },
   notifications: {
     title: 'الإشعارات',
     open: 'الإشعارات',
@@ -1232,6 +1248,8 @@ export const ar: Messages = {
         `قُبل عرض السعر ${quoteNumber} لـ ${customer}، وسجّله ${actor}`,
       QUOTATION_REJECTED: (actor, quoteNumber, customer) =>
         `رُفض عرض السعر ${quoteNumber} لـ ${customer}، وسجّله ${actor}`,
+      WHATSAPP_LEAD: (customer) => `عميل محتمل جديد من واتساب: ${customer}`,
+      WHATSAPP_MESSAGE: (customer) => `رسالة واتساب جديدة من ${customer}`,
     },
   },
 };

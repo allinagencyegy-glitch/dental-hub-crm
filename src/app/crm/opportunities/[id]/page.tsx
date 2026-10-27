@@ -10,6 +10,7 @@ import {
   getOpportunityActivityAction,
 } from '@/server/crm/opportunities/actions';
 import { listQuotationsAction } from '@/server/crm/quotations/actions';
+import { listOpportunityWhatsAppMessagesAction } from '@/server/crm/intake/actions';
 import { allowedTransitions, isTerminalStage } from '@/server/crm/opportunities/stage';
 import { OpportunityDetail } from './OpportunityDetail';
 import { canAssignOwner } from '@/server/authz/permissions';
@@ -33,13 +34,14 @@ async function getOpportunityData(id: string) {
 
   const mayAssignOwner = canAssignOwner(session.role);
 
-  const [followUps, lostReasons, owners, stageHistory, activity, quotations] = await Promise.all([
+  const [followUps, lostReasons, owners, stageHistory, activity, quotations, whatsAppMessages] = await Promise.all([
     listOpportunityFollowUpsAction(id),
     getLostReasonsAction(),
     mayAssignOwner ? getOpportunityOwnersAction() : Promise.resolve([]),
     getOpportunityStageHistoryAction(id),
     getOpportunityActivityAction(id),
     listQuotationsAction(id),
+    listOpportunityWhatsAppMessagesAction(id),
   ]);
 
   return {
@@ -50,6 +52,7 @@ async function getOpportunityData(id: string) {
     stageHistory,
     activity,
     quotations,
+    whatsAppMessages,
     canAssignOwner: mayAssignOwner,
     userRole: session.role,
     userId: session.user.id,

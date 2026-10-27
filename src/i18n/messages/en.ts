@@ -1209,6 +1209,22 @@ export const en = {
       UNREADABLE: 'The product could not be read. Check the fields and try again.',
     },
   },
+  whatsApp: {
+    title: 'WhatsApp messages',
+    hint: 'What the customer wrote to the company number. Replies are sent from WhatsApp.',
+    openChat: 'Open the chat',
+    fromAd: (headline: string) => `Came from the ad: ${headline}`,
+    noText: {
+      image: 'Sent a picture',
+      video: 'Sent a video',
+      audio: 'Sent a voice message',
+      document: 'Sent a file',
+      sticker: 'Sent a sticker',
+      location: 'Sent a location',
+      contacts: 'Sent a contact card',
+      other: 'Sent a message that cannot be shown here',
+    },
+  },
   notifications: {
     title: 'Notifications',
     open: 'Notifications',
@@ -1231,6 +1247,8 @@ export const en = {
         `Quotation ${quoteNumber} for ${customer} was accepted, recorded by ${actor}`,
       QUOTATION_REJECTED: (actor: string, quoteNumber: string, customer: string) =>
         `Quotation ${quoteNumber} for ${customer} was rejected, recorded by ${actor}`,
+      WHATSAPP_LEAD: (customer: string) => `New lead on WhatsApp: ${customer}`,
+      WHATSAPP_MESSAGE: (customer: string) => `${customer} sent a new WhatsApp message`,
     },
   },
 };

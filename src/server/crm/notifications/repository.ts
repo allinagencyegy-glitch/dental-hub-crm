@@ -19,6 +19,8 @@ export const NOTIFICATION_KINDS = [
   'FOLLOW_UP_ASSIGNED',
   'QUOTATION_ACCEPTED',
   'QUOTATION_REJECTED',
+  'WHATSAPP_LEAD',
+  'WHATSAPP_MESSAGE',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -58,15 +60,16 @@ export async function notify(db: Db, input: NotificationInput): Promise<void> {
  * Tells every active manager and admin that a lead arrived - and the owner's
  * team leader, when the owner is on a team - except the person who entered it
  * and the lead's owner: the owner hears that the lead is theirs (LEAD_ASSIGNED)
- * instead, so nobody gets two notices for one lead.
+ * instead, so nobody gets two notices for one lead. A lead that wrote in on
+ * WhatsApp is a WHATSAPP_LEAD notice, since nobody entered it.
  */
 export async function notifyLeadReceived(
   db: Db,
-  input: { leadId: string; ownerUserId: string; actorUserId: string | null },
+  input: { leadId: string; ownerUserId: string; actorUserId: string | null; kind?: 'LEAD_RECEIVED' | 'WHATSAPP_LEAD' },
 ): Promise<void> {
   await db.query(
     `INSERT INTO crm_notification (recipient_user_id, kind, actor_user_id, lead_id)
-     SELECT u.id, 'LEAD_RECEIVED', $2::uuid, $1
+     SELECT u.id, $4, $2::uuid, $1
        FROM crm_user u
       WHERE u.is_active
         AND (
@@ -75,7 +78,7 @@ export async function notifyLeadReceived(
         )
         AND u.id <> $3
         AND u.id IS DISTINCT FROM $2::uuid`,
-    [input.leadId, input.actorUserId, input.ownerUserId],
+    [input.leadId, input.actorUserId, input.ownerUserId, input.kind ?? 'LEAD_RECEIVED'],
   );
 }
 
