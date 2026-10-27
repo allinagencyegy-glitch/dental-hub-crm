@@ -4,10 +4,10 @@
  * Foundation v0 implements Home and Settings -> Users. Slice 2A implements
  * Leads. Slice 2B implements Opportunities and Follow-ups. Quotations V1 keeps
  * quotations inside the opportunity workspace; the Quotations entry lists them
- * all. Pipeline & Management Dashboard V1 enables the Pipeline entry. Every
- * other destination is reserved visually and rendered as disabled: no href,
- * no fake page, no dead link. Implementing a module means flipping `status`
- * to 'available'.
+ * all. Customers lists everyone with a won deal. Pipeline & Management
+ * Dashboard V1 enables the Pipeline entry. Every other destination is reserved
+ * visually and rendered as disabled: no href, no fake page, no dead link.
+ * Implementing a module means flipping `status` to 'available'.
  */
 import type { Permission } from '@/server/authz/permissions';
 import type { Messages } from '@/i18n/messages';
@@ -30,7 +30,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { key: 'home', href: '/crm', status: 'available' },
   { key: 'leads', href: '/crm/leads', status: 'available', permission: 'leads:read' },
   { key: 'opportunities', href: '/crm/opportunities', status: 'available', permission: 'opportunities:read' },
-  { key: 'customers', status: 'planned' },
+  { key: 'customers', href: '/crm/customers', status: 'available', permission: 'opportunities:read' },
   { key: 'followUps', href: '/crm/followups', status: 'available', permission: 'followups:read' },
   { key: 'pipeline', href: '/crm/pipeline', status: 'available', permission: 'opportunities:read' },
   { key: 'quotations', href: '/crm/quotations', status: 'available', permission: 'quotations:read' },
