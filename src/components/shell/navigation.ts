@@ -4,10 +4,11 @@
  * Foundation v0 implements Home and Settings -> Users. Slice 2A implements
  * Leads. Slice 2B implements Opportunities and Follow-ups. Quotations V1 keeps
  * quotations inside the opportunity workspace; the Quotations entry lists them
- * all. Customers lists everyone with a won deal. Pipeline & Management
- * Dashboard V1 enables the Pipeline entry. Every other destination is reserved
- * visually and rendered as disabled: no href, no fake page, no dead link.
- * Implementing a module means flipping `status` to 'available'.
+ * all. Customers lists everyone with a won deal, Reports the sales analysis
+ * over a period. Pipeline & Management Dashboard V1 enables the Pipeline
+ * entry. Every other destination is reserved visually and rendered as
+ * disabled: no href, no fake page, no dead link. Implementing a module means
+ * flipping `status` to 'available'.
  */
 import type { Permission } from '@/server/authz/permissions';
 import type { Messages } from '@/i18n/messages';
@@ -34,7 +35,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { key: 'followUps', href: '/crm/followups', status: 'available', permission: 'followups:read' },
   { key: 'pipeline', href: '/crm/pipeline', status: 'available', permission: 'opportunities:read' },
   { key: 'quotations', href: '/crm/quotations', status: 'available', permission: 'quotations:read' },
-  { key: 'reports', status: 'planned' },
+  { key: 'reports', href: '/crm/reports', status: 'available', permission: 'dashboard:read' },
   { key: 'team', status: 'planned' },
 ];
 
