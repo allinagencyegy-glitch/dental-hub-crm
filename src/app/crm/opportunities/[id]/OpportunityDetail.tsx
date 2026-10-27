@@ -22,6 +22,8 @@ import {
   type FollowUpOutcome,
 } from '@/server/crm/opportunities/followup-actions';
 import { FollowUpResultFields } from '@/components/crm/FollowUpResult';
+import { WhatsAppMessages } from '@/components/crm/WhatsAppMessages';
+import type { WhatsAppMessageEntry } from '@/server/crm/intake/repository';
 import type { LeadStatus } from '@/server/crm/leads/repository';
 import type { OpportunityDetail as OpportunityDetailData } from '@/server/crm/opportunities/repository';
 import type { OpportunityActivityEntry } from '@/server/crm/opportunities/repository';
@@ -47,6 +49,7 @@ interface OpportunityDetailProps {
   activity: OpportunityActivityEntry[];
   quotations: QuotationListItem[];
   canCreateQuotation: boolean;
+  whatsAppMessages: WhatsAppMessageEntry[];
   /** Server-rendered timestamp used for every overdue calculation. */
   now: number;
 }
@@ -102,6 +105,7 @@ export function OpportunityDetail({
   activity,
   quotations,
   canCreateQuotation,
+  whatsAppMessages,
   now,
 }: OpportunityDetailProps) {
   const router = useRouter();
@@ -589,6 +593,8 @@ export function OpportunityDetail({
               </form>
             ) : null}
           </section>
+
+          <WhatsAppMessages messages={whatsAppMessages} phone={opportunity.contactPhone} />
 
           {/* Stage movement. Only legal transitions are offered. */}
           <section className="rounded-xl bg-white p-5 shadow-[0_1px_2px_rgba(20,35,45,0.04)] ring-1 ring-[#dfe5e8]">

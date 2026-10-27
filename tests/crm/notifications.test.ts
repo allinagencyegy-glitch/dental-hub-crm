@@ -333,6 +333,8 @@ describe('notifications', () => {
         },
         { ...base, kind: 'QUOTATION_ACCEPTED', quotationId: 'q-1', opportunityId: 'o-1', quoteNumber: 'Q-00007' },
         { ...base, kind: 'QUOTATION_REJECTED', quotationId: 'q-1', opportunityId: 'o-1', quoteNumber: 'Q-00007' },
+        { ...base, kind: 'WHATSAPP_LEAD', actorName: null },
+        { ...base, kind: 'WHATSAPP_MESSAGE', actorName: null, leadId: null, opportunityId: 'o-1' },
       ];
       // Names and quote numbers are isolated, so English inside Arabic keeps its place.
       const [mona, clinic, quote] = [i('Mona Manager'), i('Smile Clinic'), i('Q-00007')];
@@ -344,6 +346,8 @@ describe('notifications', () => {
         `أسند إليك ${mona} متابعة: اجتماع مع ${clinic}، موعدها ${due}`,
         `قُبل عرض السعر ${quote} لـ ${clinic}، وسجّله ${mona}`,
         `رُفض عرض السعر ${quote} لـ ${clinic}، وسجّله ${mona}`,
+        `عميل محتمل جديد من واتساب: ${clinic}`,
+        `رسالة واتساب جديدة من ${clinic}`,
       ]);
       for (const entry of entries) {
         expect(notificationText(entry, en, formatters('en'))).not.toMatch(/[؀-ۿ]/);
@@ -355,6 +359,8 @@ describe('notifications', () => {
         '/crm/opportunities/o-1',
         '/crm/quotations/q-1',
         '/crm/quotations/q-1',
+        '/crm/leads/l-1',
+        '/crm/opportunities/o-1',
       ]);
     });
 

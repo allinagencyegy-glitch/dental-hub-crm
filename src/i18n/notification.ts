@@ -37,6 +37,10 @@ export function notificationText(entry: NotificationEntry, m: Messages, format: 
       return t.kinds.QUOTATION_ACCEPTED(actor, quote, customer);
     case 'QUOTATION_REJECTED':
       return t.kinds.QUOTATION_REJECTED(actor, quote, customer);
+    case 'WHATSAPP_LEAD':
+      return t.kinds.WHATSAPP_LEAD(customer);
+    case 'WHATSAPP_MESSAGE':
+      return t.kinds.WHATSAPP_MESSAGE(customer);
   }
 }
 

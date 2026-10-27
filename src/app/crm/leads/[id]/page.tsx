@@ -6,6 +6,7 @@ import {
   listLeadFollowUpsAction,
 } from '@/server/crm/opportunities/actions';
 import { listAccountsAction } from '@/server/crm/accounts/actions';
+import { listLeadWhatsAppMessagesAction } from '@/server/crm/intake/actions';
 import { LeadDetailPage } from './LeadDetailPage';
 import { notFound } from 'next/navigation';
 
@@ -40,6 +41,9 @@ async function getLeadData(params: Promise<{ id: string }>) {
   // Promises made on the lead itself, before it is commercial work.
   const followUps = await listLeadFollowUpsAction(id);
 
+  // What the customer wrote, when they came in on WhatsApp.
+  const whatsAppMessages = await listLeadWhatsAppMessagesAction(id);
+
   return {
     lead,
     disqualifyReasons,
@@ -49,6 +53,7 @@ async function getLeadData(params: Promise<{ id: string }>) {
     opportunityId: opportunity?.id ?? null,
     qualifiedAt: opportunity?.createdAt ?? null,
     followUps,
+    whatsAppMessages,
     now: Date.now(),
   };
 }
