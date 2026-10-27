@@ -52,7 +52,8 @@ psql_admin() { runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 "$@"; }
 wait_healthy() {
   local seconds="${1:-60}"
   for _ in $(seq 1 "$seconds"); do
-    curl -fsS -o /dev/null "$HEALTH_URL" 2>/dev/null && return 0
+    # Straight to the app: a proxy set in the environment must not answer for it.
+    curl -fsS --noproxy '*' -o /dev/null "$HEALTH_URL" 2>/dev/null && return 0
     sleep 1
   done
   return 1
