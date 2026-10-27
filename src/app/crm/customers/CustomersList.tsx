@@ -183,7 +183,7 @@ export function CustomersList({
                         <Avatar name={customer.name} size="sm" />
                         <div className="min-w-0">
                           <Link
-                            href={`/crm/opportunities/${customer.lastOpportunityId}`}
+                            href={`/crm/customers/${customer.contactId}`}
                             className="block truncate text-[11px] font-semibold text-[#202e37] hover:text-[#0e897e]"
                           >
                             {customer.name}

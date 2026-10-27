@@ -11,7 +11,7 @@ import { createContact } from '../../src/server/crm/contacts/repository';
 import { createLead } from '../../src/server/crm/leads/repository';
 import { qualifyLeadUseCase, type Actor } from '../../src/server/crm/opportunities/service';
 import { createQuotationUseCase, transitionQuotationUseCase } from '../../src/server/crm/quotations/service';
-import { listCustomers } from '../../src/server/crm/customers/repository';
+import { findCustomerDetail, listCustomers } from '../../src/server/crm/customers/repository';
 import { uniqueToken } from './setup/db';
 
 /**
@@ -82,6 +82,11 @@ describe('customers list', () => {
   }
 
   let halaLatestDeal: string;
+  let halaFirstDeal: string;
+  let halaOpenDeal: string;
+  let halaId: string;
+  let karimId: string;
+  let lamiaId: string;
 
   beforeAll(async () => {
     database = await createDisposableDatabase();
@@ -105,16 +110,27 @@ describe('customers list', () => {
     // Dr Hala bought twice: from the team rep, then from the other rep, and
     // has one deal still open with the team rep.
     const hala = await customer('Dr Hala', '+201001112223');
-    await deal(teamRep, hala, { wonOn: '2026-03-01', accepted: 120_000, estimate: 999, category: 'dental_units' });
+    halaId = hala;
+    halaFirstDeal = await deal(teamRep, hala, { wonOn: '2026-03-01', accepted: 120_000, estimate: 999, category: 'dental_units' });
     halaLatestDeal = await deal(otherRep, hala, { wonOn: '2026-09-01', estimate: 30_000, category: 'autoclaves' });
-    await deal(teamRep, hala);
+    halaOpenDeal = await deal(teamRep, hala);
 
     // Dr Karim bought from the leader, with no value recorded.
     const karim = await customer('Dr Karim');
+    karimId = karim;
     await deal(leader, karim, { wonOn: '2026-06-01', category: 'dental_units' });
+    const karimLost = await deal(leader, karim, { estimate: 5_000 });
+    await client.query(
+      `UPDATE crm_opportunity
+          SET stage = 'LOST', lost_at = '2026-07-01',
+              lost_reason_id = (SELECT id FROM crm_outcome_reason WHERE kind = 'lost' AND code = 'price_too_high')
+        WHERE id = $1`,
+      [karimLost],
+    );
 
     // Dr Lamia only has an open deal: not a customer yet.
     const lamia = await customer('Dr Lamia');
+    lamiaId = lamia;
     await deal(teamRep, lamia, { estimate: 50_000 });
   });
 
@@ -192,5 +208,56 @@ describe('customers list', () => {
     const { customers, summary } = await listCustomers(client, manager, { limit: 1, offset: 1 });
     expect(customers.map((row) => row.name)).toEqual(['Dr Karim']);
     expect(summary.customers).toBe(2);
+  });
+
+  describe('one customer', () => {
+    it('shows the full history inside the scope: purchases, open and lost deals, quotations', async () => {
+      const hala = (await findCustomerDetail(client, manager, halaId))!;
+
+      expect(hala.name).toBe('Dr Hala');
+      expect(hala.phones).toEqual([{ value: '+201001112223', isWhatsApp: false }]);
+      expect(hala.purchases.map((deal) => deal.opportunityId)).toEqual([halaLatestDeal, halaFirstDeal]);
+      expect(hala.openDeals.map((deal) => deal.opportunityId)).toEqual([halaOpenDeal]);
+      expect(hala.lostDeals).toEqual([]);
+      expect(hala.summary).toMatchObject({ purchases: 2, totalValue: 150_000, purchasesWithoutValue: 0, openDeals: 1 });
+      expect(hala.summary.firstPurchaseAt.toISOString().slice(0, 10)).toBe('2026-03-01');
+      expect(hala.summary.lastPurchaseAt.toISOString().slice(0, 10)).toBe('2026-09-01');
+    });
+
+    it('names the accepted quotation and what it sold on a purchase', async () => {
+      const hala = (await findCustomerDetail(client, manager, halaId))!;
+      const first = hala.purchases.find((deal) => deal.opportunityId === halaFirstDeal)!;
+
+      expect(first.value).toBe(120_000);
+      expect(first.acceptedQuotation?.quoteNumber).toMatch(/^Q-/);
+      expect(first.items).toEqual([{ description: 'Dental unit', quantity: 1 }]);
+      expect(hala.quotations.map((quotation) => quotation.id)).toEqual([first.acceptedQuotation!.id]);
+      expect(hala.quotations[0].status).toBe('ACCEPTED');
+    });
+
+    it('lists lost deals apart, with no value counted', async () => {
+      const karim = (await findCustomerDetail(client, manager, karimId))!;
+
+      expect(karim.purchases).toHaveLength(1);
+      expect(karim.lostDeals).toHaveLength(1);
+      expect(karim.lostDeals[0].lostAt!.toISOString().slice(0, 10)).toBe('2026-07-01');
+      expect(karim.summary.totalValue).toBeNull();
+      expect(karim.summary.purchasesWithoutValue).toBe(1);
+    });
+
+    it('keeps a rep to their own deals with the customer', async () => {
+      const hala = (await findCustomerDetail(client, otherRep, halaId))!;
+
+      expect(hala.purchases.map((deal) => deal.opportunityId)).toEqual([halaLatestDeal]);
+      expect(hala.openDeals).toEqual([]);
+      expect(hala.quotations).toEqual([]);
+      expect(hala.summary.totalValue).toBe(30_000);
+    });
+
+    it('reads as missing for a contact with no purchase, or none the actor may see', async () => {
+      expect(await findCustomerDetail(client, manager, lamiaId)).toBeNull();
+      expect(await findCustomerDetail(client, teamRep, karimId)).toBeNull();
+      expect(await findCustomerDetail(client, manager, '00000000-0000-0000-0000-000000000000')).toBeNull();
+    });
   });
 });

@@ -20,7 +20,7 @@ export interface CustomerListRow {
   accountName: string | null;
   /** Owner of the most recent won deal. */
   ownerName: string;
-  /** The most recent won deal, which the row links to. */
+  /** The most recent won deal. */
   lastOpportunityId: string;
   lastPurchaseAt: Date;
   purchases: number;
@@ -190,5 +190,198 @@ export async function listCustomers(
       categories: row.categories ?? [],
     })),
     summary,
+  };
+}
+
+export interface CustomerDeal {
+  opportunityId: string;
+  stage: string;
+  categoryCode: string | null;
+  categoryName: string | null;
+  ownerName: string;
+  createdAt: Date;
+  wonAt: Date | null;
+  lostAt: Date | null;
+  /** The accepted quotation's total, else the recorded estimate; null when neither. */
+  value: number | null;
+  acceptedQuotation: { id: string; quoteNumber: string } | null;
+  /** What the accepted quotation sold, in its own order. */
+  items: { description: string; quantity: number }[];
+}
+
+export interface CustomerQuotation {
+  id: string;
+  opportunityId: string;
+  quoteNumber: string;
+  version: number;
+  status: string;
+  totalAmount: number;
+  updatedAt: Date;
+}
+
+export interface CustomerDetail {
+  contactId: string;
+  name: string;
+  email: string | null;
+  phones: { value: string; isWhatsApp: boolean }[];
+  accountNames: string[];
+  summary: {
+    purchases: number;
+    totalValue: number | null;
+    purchasesWithoutValue: number;
+    firstPurchaseAt: Date;
+    lastPurchaseAt: Date;
+    openDeals: number;
+  };
+  /** Won deals, newest first. */
+  purchases: CustomerDeal[];
+  /** Deals still in progress, newest first. */
+  openDeals: CustomerDeal[];
+  /** Lost deals, newest first. */
+  lostDeals: CustomerDeal[];
+  /** Current quotations (not replaced by a revision), newest first. */
+  quotations: CustomerQuotation[];
+}
+
+/**
+ * One customer and their history inside the actor's scope, or null when the
+ * contact has no won deal the actor may see - a missing customer and one out
+ * of scope read the same, so the page leaks nothing.
+ */
+export async function findCustomerDetail(db: Db, actor: Actor, contactId: string): Promise<CustomerDetail | null> {
+  const params: unknown[] = [contactId];
+  const clauses = ['o.contact_id = $1'];
+  const scope = ownerScopeSql(actor, params, ['o.owner_user_id']);
+  if (scope) clauses.push(scope);
+
+  const { rows: dealRows } = await db.query<{
+    id: string;
+    stage: string;
+    category_code: string | null;
+    category_name: string | null;
+    owner_name: string;
+    created_at: Date;
+    won_at: Date | null;
+    lost_at: Date | null;
+    value: string | null;
+    accepted_id: string | null;
+    accepted_number: string | null;
+    items: { description: string; quantity: string }[] | null;
+  }>(
+    `SELECT o.id, o.stage, pc.code AS category_code, pc.name AS category_name,
+            owner.display_name AS owner_name, o.created_at, o.won_at, o.lost_at,
+            COALESCE(accepted.total_amount, o.estimated_value)::text AS value,
+            accepted.id AS accepted_id, accepted.quote_number AS accepted_number,
+            (SELECT json_agg(json_build_object('description', i.description, 'quantity', i.quantity)
+                             ORDER BY i.sequence)
+               FROM crm_quotation_item i
+              WHERE i.quotation_id = accepted.id) AS items
+       FROM crm_opportunity o
+       JOIN crm_user owner ON owner.id = o.owner_user_id
+       LEFT JOIN crm_product_category pc ON pc.id = o.product_category_id
+       LEFT JOIN crm_quotation accepted
+         ON accepted.opportunity_id = o.id AND accepted.status = 'ACCEPTED'
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY COALESCE(o.won_at, o.lost_at, o.created_at) DESC, o.id DESC`,
+    params,
+  );
+
+  const deals: CustomerDeal[] = dealRows.map((row) => ({
+    opportunityId: row.id,
+    stage: row.stage,
+    categoryCode: row.category_code,
+    categoryName: row.category_name,
+    ownerName: row.owner_name,
+    createdAt: row.created_at,
+    wonAt: row.won_at,
+    lostAt: row.lost_at,
+    value: row.value === null ? null : Number(row.value),
+    acceptedQuotation: row.accepted_id ? { id: row.accepted_id, quoteNumber: row.accepted_number! } : null,
+    items: (row.items ?? []).map((item) => ({ description: item.description, quantity: Number(item.quantity) })),
+  }));
+  const purchases = deals.filter((deal) => deal.stage === 'WON');
+  if (purchases.length === 0) return null;
+
+  const { rows: contactRows } = await db.query<{ full_name: string; email: string | null }>(
+    `SELECT full_name, email FROM crm_contact WHERE id = $1`,
+    [contactId],
+  );
+  const { rows: phoneRows } = await db.query<{ value: string; is_whatsapp: boolean }>(
+    `SELECT value, is_whatsapp FROM crm_contact_channel
+      WHERE contact_id = $1 AND channel_type = 'PHONE' AND is_active = true
+      ORDER BY created_at ASC, id ASC`,
+    [contactId],
+  );
+  // Clinics the contact is linked to, and those named on deals in scope.
+  const accountParams: unknown[] = [contactId];
+  const accountScope = ownerScopeSql(actor, accountParams, ['o.owner_user_id']);
+  const { rows: accountRows } = await db.query<{ name: string }>(
+    `SELECT a.name
+       FROM crm_account a
+      WHERE a.id IN (
+              SELECT ac.account_id FROM crm_account_contact ac WHERE ac.contact_id = $1
+              UNION
+              SELECT o.account_id FROM crm_opportunity o
+               WHERE o.contact_id = $1 AND o.account_id IS NOT NULL
+                 ${accountScope ? `AND ${accountScope}` : ''}
+            )
+      ORDER BY a.name`,
+    accountParams,
+  );
+
+  const quotationParams: unknown[] = [contactId];
+  const quotationClauses = [
+    'q.contact_id = $1',
+    'NOT EXISTS (SELECT 1 FROM crm_quotation next WHERE next.previous_quote_id = q.id)',
+  ];
+  const quotationScope = ownerScopeSql(actor, quotationParams, ['o.owner_user_id']);
+  if (quotationScope) quotationClauses.push(quotationScope);
+  const { rows: quotationRows } = await db.query<{
+    id: string;
+    opportunity_id: string;
+    quote_number: string;
+    version: number;
+    status: string;
+    total_amount: string;
+    updated_at: Date;
+  }>(
+    `SELECT q.id, q.opportunity_id, q.quote_number, q.version, q.status, q.total_amount, q.updated_at
+       FROM crm_quotation q
+       JOIN crm_opportunity o ON o.id = q.opportunity_id
+      WHERE ${quotationClauses.join(' AND ')}
+      ORDER BY q.updated_at DESC, q.id DESC`,
+    quotationParams,
+  );
+
+  const valued = purchases.filter((deal) => deal.value !== null);
+  const purchaseDates = purchases.map((deal) => deal.wonAt!.getTime());
+  const openDeals = deals.filter((deal) => deal.stage !== 'WON' && deal.stage !== 'LOST');
+
+  return {
+    contactId,
+    name: contactRows[0].full_name,
+    email: contactRows[0].email,
+    phones: phoneRows.map((row) => ({ value: row.value, isWhatsApp: row.is_whatsapp })),
+    accountNames: accountRows.map((row) => row.name),
+    summary: {
+      purchases: purchases.length,
+      totalValue: valued.length > 0 ? valued.reduce((sum, deal) => sum + deal.value!, 0) : null,
+      purchasesWithoutValue: purchases.length - valued.length,
+      firstPurchaseAt: new Date(Math.min(...purchaseDates)),
+      lastPurchaseAt: new Date(Math.max(...purchaseDates)),
+      openDeals: openDeals.length,
+    },
+    purchases,
+    openDeals,
+    lostDeals: deals.filter((deal) => deal.stage === 'LOST'),
+    quotations: quotationRows.map((row) => ({
+      id: row.id,
+      opportunityId: row.opportunity_id,
+      quoteNumber: row.quote_number,
+      version: row.version,
+      status: row.status,
+      totalAmount: Number(row.total_amount),
+      updatedAt: row.updated_at,
+    })),
   };
 }
