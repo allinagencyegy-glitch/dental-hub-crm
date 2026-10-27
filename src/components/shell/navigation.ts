@@ -5,10 +5,10 @@
  * Leads. Slice 2B implements Opportunities and Follow-ups. Quotations V1 keeps
  * quotations inside the opportunity workspace; the Quotations entry lists them
  * all. Customers lists everyone with a won deal, Reports the sales analysis
- * over a period. Pipeline & Management Dashboard V1 enables the Pipeline
- * entry. Every other destination is reserved visually and rendered as
- * disabled: no href, no fake page, no dead link. Implementing a module means
- * flipping `status` to 'available'.
+ * over a period, Team what is on each person's plate right now. Pipeline &
+ * Management Dashboard V1 enables the Pipeline entry. A destination not built
+ * yet is reserved visually and rendered as disabled: no href, no fake page,
+ * no dead link. Implementing a module means flipping `status` to 'available'.
  */
 import type { Permission } from '@/server/authz/permissions';
 import type { Messages } from '@/i18n/messages';
@@ -36,7 +36,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { key: 'pipeline', href: '/crm/pipeline', status: 'available', permission: 'opportunities:read' },
   { key: 'quotations', href: '/crm/quotations', status: 'available', permission: 'quotations:read' },
   { key: 'reports', href: '/crm/reports', status: 'available', permission: 'dashboard:read' },
-  { key: 'team', status: 'planned' },
+  { key: 'team', href: '/crm/team', status: 'available', permission: 'dashboard:read' },
 ];
 
 export const SETTINGS_NAV: NavItem[] = [
