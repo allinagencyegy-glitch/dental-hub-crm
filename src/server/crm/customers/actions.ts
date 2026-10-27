@@ -4,7 +4,13 @@ import 'server-only';
 import { z } from 'zod';
 import { assertPermission } from '@/server/auth/dal';
 import { db as defaultDb } from '@/server/db/client';
-import { listCustomers, type CustomerListRow, type CustomerListSummary } from './repository';
+import {
+  findCustomerDetail,
+  listCustomers,
+  type CustomerDetail,
+  type CustomerListRow,
+  type CustomerListSummary,
+} from './repository';
 
 const listOptionsSchema = z.object({
   ownerUserId: z.uuid().optional(),
@@ -24,4 +30,11 @@ export async function listCustomersAction(
   const session = await assertPermission('opportunities:read');
   const parsed = listOptionsSchema.safeParse(input);
   return listCustomers(defaultDb(), { userId: session.user.id, role: session.role }, parsed.success ? parsed.data : {});
+}
+
+/** One customer's page, or null when missing or outside the actor's scope. */
+export async function getCustomerAction(contactId: string): Promise<CustomerDetail | null> {
+  const session = await assertPermission('opportunities:read');
+  if (!z.uuid().safeParse(contactId).success) return null;
+  return findCustomerDetail(defaultDb(), { userId: session.user.id, role: session.role }, contactId);
 }
