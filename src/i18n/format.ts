@@ -61,3 +61,18 @@ export function formatters(locale: Locale): Formatters {
 export function catalogLabel(labels: Readonly<Record<string, string>>, code: string | null | undefined, fallback: string): string {
   return (code && Object.hasOwn(labels, code) ? labels[code] : undefined) ?? fallback;
 }
+
+/**
+ * How long ago `value` was, in the reader's language: "5 minutes ago",
+ * "yesterday", "3 days ago" / "قبل ٣ أيام". Past a month it counts months.
+ */
+export function formatAgo(locale: Locale, value: Date, now: Date): string {
+  const relative = new Intl.RelativeTimeFormat(INTL_LOCALE[locale], { numeric: 'auto' });
+  const minutes = Math.max(0, Math.floor((now.getTime() - value.getTime()) / 60_000));
+  if (minutes < 60) return relative.format(-minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return relative.format(-hours, 'hour');
+  const days = Math.floor(hours / 24);
+  if (days < 30) return relative.format(-days, 'day');
+  return relative.format(-Math.floor(days / 30), 'month');
+}
