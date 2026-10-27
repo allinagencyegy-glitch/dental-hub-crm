@@ -95,6 +95,11 @@ main() {
 
   if [[ -n "$previous" && -f "$previous/REVISION" && "$(<"$previous/REVISION")" == "$sha" ]] && ((!force)); then
     echo "Already running ${sha:0:7} ($(git_ log -1 --format=%s "$sha")). Nothing to do."
+    # A first install whose health check timed out leaves its release unmarked;
+    # once it answers, it is a release --rollback may return to.
+    if [[ ! -f "$previous/$HEALTHY_MARKER" ]] && wait_healthy 5; then
+      touch "$previous/$HEALTHY_MARKER"
+    fi
     return
   fi
 
